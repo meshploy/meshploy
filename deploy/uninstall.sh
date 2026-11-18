@@ -73,6 +73,7 @@ remove_own_mesh() {
   fi
   sudo rm -f /etc/systemd/system/k3s.service.d/10-meshploy-mesh.conf \
     /etc/systemd/system/k3s-agent.service.d/10-meshploy-mesh.conf
+  sudo rmdir /usr/local/lib/meshploy 2>/dev/null || true
   success "Meshploy's mesh removed; any Tailscale of this machine's own is untouched"
 }
 
@@ -296,6 +297,10 @@ else
       info "  meshploy node remove <name> <user@host>"
       if confirm "Run k3s-uninstall.sh? (${BOLD}deletes the cluster and every workload and volume on this node${RESET})"; then
         sudo k3s-uninstall.sh || true
+        # k3s's uninstaller keeps the node's password, which a later join of
+        # this machine under the same name would be refused for.
+        sudo rm -rf /etc/rancher/node
+        sudo rmdir /etc/rancher /var/lib/rancher 2>/dev/null || true
         success "k3s removed"
       else
         warn "k3s kept"
@@ -336,11 +341,14 @@ else
 
   # ── Remove images (optional) ────────────────────────────────────────────────
   header "Container images"
-  if confirm "Remove pulled Meshploy images? (saves disk space)"; then
+  if confirm "Remove the images Meshploy pulled? (saves disk space)"; then
     # Every tag of every Meshploy image, not just :latest: an edge install runs
-    # :main, and upgrades leave older tags behind.
-    _IMAGES="$($CONTAINER_RUNTIME images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
-      | grep '^ghcr.io/meshploy/' | grep -v ':<none>$' || true)"
+    # :main, and upgrades leave older tags behind. Then the others the compose
+    # file names (Postgres, Headscale, CoreDNS, the registry); one a container
+    # of this machine's own still uses is refused and stays.
+    _IMAGES="$( { $CONTAINER_RUNTIME images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+      | grep '^ghcr.io/meshploy/' | grep -v ':<none>$'; \
+      $COMPOSE_CMD config --images 2>/dev/null; } | sort -u || true)"
     if [[ -n "$_IMAGES" ]]; then
       # shellcheck disable=SC2086 # one image reference per word, by design
       $CONTAINER_RUNTIME rmi $_IMAGES 2>/dev/null || true
