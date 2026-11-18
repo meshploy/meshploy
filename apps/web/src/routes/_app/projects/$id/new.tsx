@@ -2679,6 +2679,11 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
                     Auto-generated: {generatedVars.map((v) => v.key).join(", ")}
                   </p>
                 )}
+                {templateDetail?.manifest.notes && (
+                  <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                    {templateDetail.manifest.notes}
+                  </p>
+                )}
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Compose (editable)</p>
                   <StackEditor value={spec} onChange={setSpec} projectId={projectId} minHeight="300px" />

@@ -27,6 +27,9 @@ type Manifest struct {
 	Links       Links      `yaml:"links"       json:"links"`
 	Maintainers []string   `yaml:"maintainers" json:"maintainers,omitempty"`
 	Variables   []Variable `yaml:"variables"   json:"variables"`
+	// Notes is what someone deploying the template needs to know that the
+	// app does not tell them, such as its first sign-in. Plain text.
+	Notes string `yaml:"notes" json:"notes,omitempty"`
 }
 
 type Links struct {

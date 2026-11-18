@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ExternalLink,
+  Info,
   KeyRound,
   Loader2,
   Pencil,
@@ -144,6 +145,18 @@ function TemplateDetailPage() {
               trigger={<Button>Use template</Button>}
             />
           </div>
+
+          {manifest.notes && (
+            <div className="rounded-xl border border-border/60 bg-card p-4 space-y-1.5">
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                Before you use it
+              </p>
+              <p className="whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
+                {manifest.notes}
+              </p>
+            </div>
+          )}
 
           {/* Variables */}
           {(prompted.length > 0 || generated.length > 0) && (

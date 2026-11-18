@@ -19,6 +19,8 @@ export interface TemplateManifest {
   links: { website?: string; source?: string }
   maintainers?: string[]
   variables: TemplateVariable[]
+  /** What to know that the app does not say, such as its first sign-in. */
+  notes?: string
 }
 
 export interface TemplateDetail {
