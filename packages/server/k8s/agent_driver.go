@@ -66,6 +66,7 @@ func NewAgentDriver(addr string, caPEM []byte, token string) (*AgentDriver, erro
 		BearerToken:     token,
 		TLSClientConfig: rest.TLSClientConfig{CAData: caPEM, ServerName: ClusterAgentServerName},
 		Timeout:         0, // watches and streams last as long as they need
+		Dial:            newAgentDialer().DialContext,
 	}
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
