@@ -57,6 +57,9 @@ type NodeService struct {
 	notif         *NotificationService
 	k8s           kubernetes.Interface // nil without a cluster; removal then skips that step
 	cluster       appk8s.Driver        // prunes a node's images; nil exactly when k8s is
+	// builderImage is the builder kept on build nodes (BUILDER_IMAGE); empty
+	// is the driver's own.
+	builderImage string
 
 	// agent is the cluster when it is reached through a cluster agent, which
 	// registration points at the agent; nil otherwise, and then no agent

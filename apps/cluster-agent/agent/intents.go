@@ -54,6 +54,10 @@ func (a *Agent) serveIntent(w http.ResponseWriter, r *http.Request) {
 		var n int
 		n, err = a.prune(ctx, parts[1])
 		out, what = appk8s.PruneResult{Removed: n}, "the image cleanup on "+parts[1]
+	case r.Method == http.MethodPost && len(parts) == 3 && parts[0] == "nodes" && parts[2] == "builder":
+		var started bool
+		started, err = a.keepBuilder(ctx, parts[1])
+		out, what = appk8s.KeepBuilderResult{Started: started}, "keeping the builder on "+parts[1]
 	case r.Method == http.MethodPost && len(parts) == 4 && parts[0] == "nodes" && parts[2] == "shells":
 		out, err = a.openShell(ctx, parts[1], parts[3])
 		what = "the node terminal on " + parts[1]
@@ -128,6 +132,21 @@ func (a *Agent) prune(ctx context.Context, node string) (int, error) {
 		return 0, err
 	}
 	return appk8s.PruneNodeImages(ctx, a.cs, node, pruneTimeout)
+}
+
+// keepBuilder keeps the agent's own builder on a node of this cluster: the
+// API says where, never what.
+func (a *Agent) keepBuilder(ctx context.Context, node string) (bool, error) {
+	if a.builds.Image == "" {
+		return false, errRefused{"keeping a builder, which this cluster agent is not set up to run"}
+	}
+	if _, err := a.cs.CoreV1().Nodes().Get(ctx, node, metav1.GetOptions{}); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return false, errRefused{"keeping the builder on " + node + ", which is not in this cluster"}
+		}
+		return false, err
+	}
+	return appk8s.KeepBuilder(ctx, a.cs, node, a.builds.Image)
 }
 
 // removeNode takes a worker out of the cluster, which the API asks for once

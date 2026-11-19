@@ -284,6 +284,7 @@ packages/server/
 │   ├── permission.go       # Resource permission grants
 │   ├── node.go             # Node CRUD, registration/provisioning tokens, offline monitor
 │   ├── node_exporter.go    # Live metrics scraping from node_exporter
+│   ├── builder_keep.go     # The builder kept downloaded and pinned on every build node, hourly
 │   ├── metrics_history.go  # Metrics history: once-a-minute sampler, five-minute rollup, retention, reads
 │   ├── workload.go         # Service CRUD, env vars, build/db config
 │   ├── stack.go            # Stack parse, apply, sync

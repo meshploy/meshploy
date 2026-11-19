@@ -308,6 +308,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	nodes.notif = notif
 	nodes.k8s = k8sClient
 	nodes.cluster = cluster
+	if c != nil {
+		nodes.builderImage = c.BuilderImage
+	}
 	// Workloads need the deployment service to re-apply a Deployment from current
 	// config on start; the two are wired after construction because deployments
 	// is built from workloads' dependencies.
@@ -449,6 +452,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 				log.Printf("warning: sandbox runtime class: %v", err)
 			}
 		}()
+	}
+
+	if c != nil && cluster != nil {
+		go nodes.KeepBuilders(context.Background())
 	}
 
 	svc.ProjectMaps = &ProjectMapService{db: db, workloads: workloads, stacks: svc.Stacks, routes: routes, volumes: volumes}

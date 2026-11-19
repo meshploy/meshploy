@@ -93,6 +93,24 @@ func TestAgentDriverThroughTheAgent(t *testing.T) {
 		t.Fatalf("prune on a node not in the cluster: %v", err)
 	}
 
+	// The agent keeps its own builder, whatever image the API names.
+	started, err := d.KeepBuilder(ctx, "edge", "ghcr.io/someone/evil:x")
+	if err != nil || !started {
+		t.Fatalf("KeepBuilder: started=%v err=%v", started, err)
+	}
+	kept, _ := cs.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "app=meshploy-builder-keep"})
+	if len(kept.Items) != 1 || kept.Items[0].Spec.NodeName != "edge" {
+		t.Fatalf("keep pods: %+v", kept.Items)
+	}
+	for _, e := range kept.Items[0].Spec.Containers[0].Env {
+		if e.Name == "IMG" && e.Value != a.builds.Image {
+			t.Fatalf("the agent kept %q, not its own builder %q", e.Value, a.builds.Image)
+		}
+	}
+	if _, err := d.KeepBuilder(ctx, "nowhere", ""); !errors.As(err, &refusal) {
+		t.Fatalf("keep on a node not in the cluster: %v", err)
+	}
+
 	cs.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-1"}}, metav1.CreateOptions{})
 	if err := d.RemoveNode(ctx, "worker-1"); err != nil {
 		t.Fatalf("RemoveNode: %v", err)

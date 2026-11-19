@@ -30,38 +30,7 @@ echo "removed $((before - after))"`
 // the node terminal does, and waits up to timeout for it.
 func PruneNodeImages(ctx context.Context, client kubernetes.Interface, k8sNodeName string, timeout time.Duration) (int, error) {
 	pods := client.CoreV1().Pods("kube-system")
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "meshploy-image-prune-",
-			Labels:       map[string]string{"app": "meshploy-image-prune", "managed-by": "meshploy"},
-		},
-		Spec: corev1.PodSpec{
-			EnableServiceLinks:            boolPtr(false),
-			NodeName:                      k8sNodeName,
-			HostPID:                       true,
-			RestartPolicy:                 corev1.RestartPolicyNever,
-			TerminationGracePeriodSeconds: int64Ptr(0),
-			Tolerations:                   []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
-			Containers: []corev1.Container{{
-				Name:            "prune",
-				Image:           "busybox:stable",
-				ImagePullPolicy: corev1.PullIfNotPresent,
-				Command:         []string{"chroot", "/host", "/bin/sh", "-c", pruneScript},
-				SecurityContext: &corev1.SecurityContext{Privileged: boolPtr(true)},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("10m"),
-						corev1.ResourceMemory: resource.MustParse("32Mi"),
-					},
-				},
-				VolumeMounts: []corev1.VolumeMount{{Name: "host-root", MountPath: "/host"}},
-			}},
-			Volumes: []corev1.Volume{{
-				Name:         "host-root",
-				VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/"}},
-			}},
-		},
-	}
+	pod := hostPod(k8sNodeName, "meshploy-image-prune-", "meshploy-image-prune", "prune", pruneScript, nil)
 	created, err := pods.Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("start the cleanup on %s: %w", k8sNodeName, err)
@@ -120,6 +89,45 @@ func countDeleted(out string) int {
 		}
 	}
 	return 0
+}
+
+// hostPod is a short privileged pod on one node that runs script in the host's
+// own root, through its k3s: the image cleanup and keeping the builder. app
+// labels it, so its kind can be found again.
+func hostPod(node, generateName, app, container, script string, env []corev1.EnvVar) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: generateName,
+			Labels:       map[string]string{"app": app, "managed-by": "meshploy"},
+		},
+		Spec: corev1.PodSpec{
+			EnableServiceLinks:            boolPtr(false),
+			NodeName:                      node,
+			HostPID:                       true,
+			RestartPolicy:                 corev1.RestartPolicyNever,
+			TerminationGracePeriodSeconds: int64Ptr(0),
+			Tolerations:                   []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+			Containers: []corev1.Container{{
+				Name:            container,
+				Image:           "busybox:stable",
+				ImagePullPolicy: corev1.PullIfNotPresent,
+				Command:         []string{"chroot", "/host", "/bin/sh", "-c", script},
+				Env:             env,
+				SecurityContext: &corev1.SecurityContext{Privileged: boolPtr(true)},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+				VolumeMounts: []corev1.VolumeMount{{Name: "host-root", MountPath: "/host"}},
+			}},
+			Volumes: []corev1.Volume{{
+				Name:         "host-root",
+				VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/"}},
+			}},
+		},
+	}
 }
 
 func lastLine(out string) string {

@@ -28,6 +28,12 @@ const ClusterAgentServerName = "cluster-agent.meshploy.internal"
 // the host: builds, image cleanups and node terminals.
 const IntentPrefix = "/meshploy/v1/"
 
+// KeepBuilderResult is a cluster agent's answer to keeping its builder on a
+// node.
+type KeepBuilderResult struct {
+	Started bool `json:"started"`
+}
+
 // PruneResult is a cluster agent's answer to an image cleanup.
 type PruneResult struct {
 	Removed int `json:"removed"`
@@ -93,6 +99,14 @@ func (d *AgentDriver) PruneNodeImages(ctx context.Context, node string, timeout 
 	var out PruneResult
 	err := d.call(ctx, http.MethodPost, "nodes/"+url.PathEscape(node)+"/prune", nil, &out)
 	return out.Removed, err
+}
+
+// KeepBuilder asks the agent to keep its builder on node: the agent names the
+// image, as it does for a build.
+func (d *AgentDriver) KeepBuilder(ctx context.Context, node, _ string) (bool, error) {
+	var out KeepBuilderResult
+	err := d.call(ctx, http.MethodPost, "nodes/"+url.PathEscape(node)+"/builder", nil, &out)
+	return out.Started, err
 }
 
 func (d *AgentDriver) OpenNodeShell(ctx context.Context, node, podName string) (*corev1.Pod, error) {

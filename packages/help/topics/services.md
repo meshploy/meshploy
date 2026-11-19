@@ -20,7 +20,7 @@ Meshploy clones the branch you choose and builds an image with one of two builde
 
 A build runs as a job on a **build node**, pushes the image to your registry (the built-in one, or a registry you connected), then deploys it. The build log streams on the deployment's page, and the deployment records the branch and commit it built.
 
-A node's first build downloads Meshploy's builder image, about 180 MB; its later builds reuse it. While it downloads, the build log says about how much has arrived and how long is left, estimated from what the node is receiving. A build may run for an hour in all, download included, so on a node whose connection is too slow the log says the build will stop, and building on another node is the way through: turn off **Act as build node** on the slow one.
+Each build node downloads Meshploy's builder image, about 180 MB, before its first build: the API checks every build node a minute after it starts (so after each upgrade) and every hour, and keeps the builder there between builds, so no cleanup removes it. A build waits for it only on a node that has not finished downloading it. While it downloads, the build log says about how much has arrived and how long is left, estimated from what the node is receiving. A build may run for an hour in all, download included, so on a node whose connection is too slow the log says the build will stop, and building on another node is the way through: turn off **Act as build node** on the slow one.
 
 The service's page links the repository it builds from, which opens on its provider.
 

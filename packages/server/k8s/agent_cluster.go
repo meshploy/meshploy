@@ -206,6 +206,14 @@ func (c *AgentCluster) PruneNodeImages(ctx context.Context, node string, timeout
 	return a.driver.PruneNodeImages(ctx, node, timeout)
 }
 
+func (c *AgentCluster) KeepBuilder(ctx context.Context, node, image string) (bool, error) {
+	a, err := c.conn()
+	if err != nil {
+		return false, err
+	}
+	return a.driver.KeepBuilder(ctx, node, image)
+}
+
 func (c *AgentCluster) OpenNodeShell(ctx context.Context, node, podName string) (*corev1.Pod, error) {
 	a, err := c.conn()
 	if err != nil {

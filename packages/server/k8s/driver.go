@@ -30,6 +30,11 @@ type Driver interface {
 	// PruneNodeImages removes the images no container uses from a node and
 	// returns how many it removed.
 	PruneNodeImages(ctx context.Context, node string, timeout time.Duration) (int, error)
+	// KeepBuilder starts downloading the builder on a build node and pins it
+	// there, so no cleanup removes it between builds; started is false when
+	// that is already under way. The image is the driver's to choose, as for
+	// StartBuild.
+	KeepBuilder(ctx context.Context, node, image string) (started bool, err error)
 	// OpenNodeShell starts the node terminal's pod on a node, which exec then
 	// enters.
 	OpenNodeShell(ctx context.Context, node, podName string) (*corev1.Pod, error)
@@ -63,6 +68,10 @@ func (d *LocalDriver) StartBuild(ctx context.Context, p BuildJobParams) error {
 
 func (d *LocalDriver) PruneNodeImages(ctx context.Context, node string, timeout time.Duration) (int, error) {
 	return PruneNodeImages(ctx, d.cs, node, timeout)
+}
+
+func (d *LocalDriver) KeepBuilder(ctx context.Context, node, image string) (bool, error) {
+	return KeepBuilder(ctx, d.cs, node, builderImageOr(image))
 }
 
 func (d *LocalDriver) OpenNodeShell(ctx context.Context, node, podName string) (*corev1.Pod, error) {
