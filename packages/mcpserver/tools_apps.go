@@ -47,11 +47,12 @@ func (s *srv) registerAppTools(ms *mcpsdk.MCPServer) {
 	ms.AddTool(
 		mcp.NewTool("share_app",
 			mcp.WithDescription("Share a service's app with people by email: each gets a sign-in link, and only they (and the workspace's members) can open it. "+
+				"Meshploy signs them in: the app receives X-Meshploy-User-Id, -Email, -Name, -Teams and -Role on every request (and from GET /_meshploy/me), so it needs no login of its own. "+
 				"Needs Meshploy Enterprise or Meshploy Cloud; on Community it says so, which is worth telling the user as it is."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID or slug")),
 			mcp.WithString("service", mcp.Required(), mcp.Description("Service name or ID")),
 			mcp.WithString("emails", mcp.Required(), mcp.Description("Email addresses, comma-separated")),
-			mcp.WithString("role", mcp.Description("viewer (default) or editor")),
+			mcp.WithString("role", mcp.Description("Their role in the app, which it is told: viewer (default), admin, or one the app declares in its sharing settings")),
 		),
 		s.handleShareApp,
 	)
@@ -193,10 +194,9 @@ func (s *srv) handleShareApp(_ context.Context, req mcp.CallToolRequest) (*mcp.C
 	if len(emails) == 0 {
 		return mcp.NewToolResultError("emails is required: one or more addresses, comma-separated"), nil
 	}
-	role := mcp.ParseString(req, "role", "viewer")
-	if role != "viewer" && role != "editor" {
-		return mcp.NewToolResultError("role must be viewer or editor"), nil
-	}
+	// The app's roles are the server's to know: it refuses one the app does
+	// not have, and says which it has.
+	role := strings.TrimSpace(mcp.ParseString(req, "role", "viewer"))
 	svc, err := s.c.GetServiceByName(s.orgID, p.ID, mcp.ParseString(req, "service", ""))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil

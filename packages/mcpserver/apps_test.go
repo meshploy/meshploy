@@ -207,21 +207,18 @@ func TestShareAppOnCommunitySaysWhereSharingIs(t *testing.T) {
 func TestShareAppSendsTheAddresses(t *testing.T) {
 	f := &fakeAPI{services: []client.Service{{ID: "s1", Name: "todo-app"}}, shareStatus: 201}
 	s := &srv{c: client.New(f.server(t).URL, "t"), orgID: "org-1"}
-	res := callTool(t, s.handleShareApp, map[string]any{"project_id": "tools", "service": "todo-app", "emails": "asha@example.com ravi@example.com", "role": "editor"})
+	// A role is the app's to have, so any is sent and the server refuses one
+	// the app does not have.
+	res := callTool(t, s.handleShareApp, map[string]any{"project_id": "tools", "service": "todo-app", "emails": "asha@example.com ravi@example.com", "role": "approver"})
 	if res.IsError {
 		t.Fatalf("share failed: %+v", res.Content)
 	}
-	if f.shared["role"] != "editor" || len(f.shared["emails"].([]any)) != 2 {
+	if f.shared["role"] != "approver" || len(f.shared["emails"].([]any)) != 2 {
 		t.Errorf("sent %v", f.shared)
 	}
 
-	for _, args := range []map[string]any{
-		{"project_id": "tools", "service": "todo-app", "emails": "not-an-address"},
-		{"project_id": "tools", "service": "todo-app", "emails": "a@example.com", "role": "owner"},
-	} {
-		if res := callTool(t, s.handleShareApp, args); !res.IsError {
-			t.Errorf("accepted %v", args)
-		}
+	if res := callTool(t, s.handleShareApp, map[string]any{"project_id": "tools", "service": "todo-app", "emails": "not-an-address"}); !res.IsError {
+		t.Error("accepted a string that is not an address")
 	}
 }
 

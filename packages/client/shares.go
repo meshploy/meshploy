@@ -16,7 +16,8 @@ var ErrSharingUnavailable = errors.New("sharing an app with people needs Meshplo
 // ShareBody is who an app is shared with, and as what.
 type ShareBody struct {
 	Emails []string `json:"emails"`
-	// Role is viewer (default) or editor.
+	// Role is their role in the app: viewer (default), admin, or one the app
+	// declares.
 	Role string `json:"role,omitempty"`
 }
 
