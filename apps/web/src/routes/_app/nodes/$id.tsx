@@ -32,21 +32,20 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { useMetricsStore, type RawSample } from "@/store/metrics-store"
-import { MetricsHistory, formatBytes, type HistorySeries } from "@/components/metrics/metrics-history"
+import { MetricsHistory, formatBytes, type HistorySeries, type LiveTail } from "@/components/metrics/metrics-history"
 import { metrics as metricsApi, type ApiNodeMetricSample } from "@/lib/api"
 
 const NODE_HISTORY: HistorySeries<ApiNodeMetricSample>[] = [
-  { label: "CPU", color: "oklch(0.65 0.18 250)", value: (p) => p.cpu_pct, format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
-  { label: "Memory", color: "oklch(0.65 0.18 300)", value: (p) => (p.mem_total ? (100 * p.mem_used) / p.mem_total : null), format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
-  { label: "Disk", color: "oklch(0.72 0.18 70)", value: (p) => (p.disk_total ? (100 * p.disk_used) / p.disk_total : null), format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
-  { label: "Network", color: "oklch(0.65 0.18 200)", value: (p) => p.net_rx_bps + p.net_tx_bps, format: (v) => `${formatBytes(v)}/s` },
+  { label: "CPU", icon: <Cpu className="h-4 w-4" />, color: "oklch(0.65 0.18 250)", value: (p) => p.cpu_pct, format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
+  { label: "Memory", icon: <MemoryStick className="h-4 w-4" />, color: "oklch(0.65 0.18 300)", value: (p) => (p.mem_total ? (100 * p.mem_used) / p.mem_total : null), format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
+  { label: "Disk", icon: <HardDrive className="h-4 w-4" />, color: "oklch(0.72 0.18 70)", value: (p) => (p.disk_total ? (100 * p.disk_used) / p.disk_total : null), format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
+  { label: "Network", icon: <Network className="h-4 w-4" />, color: "oklch(0.65 0.18 200)", value: (p) => p.net_rx_bps + p.net_tx_bps, format: (v) => `${formatBytes(v)}/s` },
 ]
 import { CLUSTER_ROLES, RolePicker } from "@/components/nodes/role-picker"
 import { RoleChangeDialog } from "@/components/nodes/role-change-dialog"
 import { formatRelativeTime } from "@/lib/utils"
-import { useState, useEffect, useRef, useMemo, useId } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { TermInfo } from "@/help/term"
-import { AreaChart, Area, YAxis, ResponsiveContainer, Tooltip } from "recharts"
 
 function toRawSample(ts: number, m: ApiNodeMetrics): RawSample {
   return {
@@ -67,75 +66,64 @@ interface ComputedMetrics {
   cpuPct: number | null
   cpuCoresUsed: number | null
   cpuCores: number
-  memPct: number
   memUsedGB: number
   memTotalGB: number
-  diskPct: number
   diskUsedGB: number
   diskTotalGB: number
-  netRxMbps: number | null
-  netTxMbps: number | null
-  cpuSeries: number[]
-  memSeries: number[]
-  diskSeries: number[]
-  netSeries: number[]
+  netRxBps: number | null
+  netTxBps: number | null
+  /** Each reading against the one before it, in NODE_HISTORY's order: CPU, memory, disk, network. */
+  tail: LiveTail["points"]
 }
 
 function computeMetrics(history: RawSample[]): ComputedMetrics | null {
   if (history.length === 0) return null
   const latest = history[history.length - 1]
   const prev = history.length > 1 ? history[history.length - 2] : null
-
   const GB = 1_073_741_824
-  const memUsedGB = (latest.memTotal - latest.memAvail) / GB
-  const memTotalGB = latest.memTotal / GB
-  const memPct = latest.memTotal > 0 ? (1 - latest.memAvail / latest.memTotal) * 100 : 0
-  const diskUsedGB = (latest.diskTotal - latest.diskAvail) / GB
-  const diskTotalGB = latest.diskTotal / GB
-  const diskPct = latest.diskTotal > 0 ? (1 - latest.diskAvail / latest.diskTotal) * 100 : 0
+  const pct = (total: number, avail: number) => (total > 0 ? (1 - avail / total) * 100 : null)
 
   let cpuPct: number | null = null
-  let cpuCoresUsed: number | null = null
-  let netRxMbps: number | null = null
-  let netTxMbps: number | null = null
-
+  let netRxBps: number | null = null
+  let netTxBps: number | null = null
   if (prev) {
     const dTotal = latest.cpuTotal - prev.cpuTotal
-    const dIdle = latest.cpuIdle - prev.cpuIdle
-    if (dTotal > 0) {
-      cpuPct = (1 - dIdle / dTotal) * 100
-      cpuCoresUsed = (cpuPct / 100) * latest.cpuCores
-    }
+    if (dTotal > 0) cpuPct = (1 - (latest.cpuIdle - prev.cpuIdle) / dTotal) * 100
     const dtS = (latest.ts - prev.ts) / 1000
     if (dtS > 0) {
-      netRxMbps = ((latest.netRx - prev.netRx) / dtS / 1_000_000) * 8
-      netTxMbps = ((latest.netTx - prev.netTx) / dtS / 1_000_000) * 8
+      netRxBps = (latest.netRx - prev.netRx) / dtS
+      netTxBps = (latest.netTx - prev.netTx) / dtS
     }
   }
 
-  const cpuSeries: number[] = []
-  const memSeries: number[] = []
-  const diskSeries: number[] = []
-  const netSeries: number[] = []
-
+  const tail: LiveTail["points"] = []
   for (let i = 1; i < history.length; i++) {
     const c = history[i]
     const p = history[i - 1]
     const dT = c.cpuTotal - p.cpuTotal
-    const dI = c.cpuIdle - p.cpuIdle
-    cpuSeries.push(dT > 0 ? (1 - dI / dT) * 100 : 0)
-    memSeries.push(c.memTotal > 0 ? (1 - c.memAvail / c.memTotal) * 100 : 0)
-    diskSeries.push(c.diskTotal > 0 ? (1 - c.diskAvail / c.diskTotal) * 100 : 0)
     const dt = (c.ts - p.ts) / 1000
-    netSeries.push(dt > 0 ? ((c.netRx - p.netRx + c.netTx - p.netTx) / dt / 1_000_000) * 8 : 0)
+    tail.push({
+      t: c.ts,
+      values: [
+        dT > 0 ? (1 - (c.cpuIdle - p.cpuIdle) / dT) * 100 : null,
+        pct(c.memTotal, c.memAvail),
+        pct(c.diskTotal, c.diskAvail),
+        dt > 0 ? (c.netRx - p.netRx + c.netTx - p.netTx) / dt : null,
+      ],
+    })
   }
 
   return {
-    cpuPct, cpuCoresUsed, cpuCores: latest.cpuCores,
-    memPct, memUsedGB, memTotalGB,
-    diskPct, diskUsedGB, diskTotalGB,
-    netRxMbps, netTxMbps,
-    cpuSeries, memSeries, diskSeries, netSeries,
+    cpuPct,
+    cpuCoresUsed: cpuPct !== null ? (cpuPct / 100) * latest.cpuCores : null,
+    cpuCores: latest.cpuCores,
+    memUsedGB: (latest.memTotal - latest.memAvail) / GB,
+    memTotalGB: latest.memTotal / GB,
+    diskUsedGB: (latest.diskTotal - latest.diskAvail) / GB,
+    diskTotalGB: latest.diskTotal / GB,
+    netRxBps,
+    netTxBps,
+    tail,
   }
 }
 
@@ -189,6 +177,19 @@ function NodeDetailPage() {
   }, [metricsData, dataUpdatedAt, id, addSample])
 
   const computed = useMemo(() => computeMetrics(history), [history])
+  const live = useMemo<LiveTail | undefined>(() => {
+    if (!computed) return undefined
+    const c = computed
+    return {
+      points: c.tail,
+      details: [
+        c.cpuCoresUsed !== null ? `${c.cpuCores} vCPU · ${c.cpuCoresUsed.toFixed(2)} in use` : `${c.cpuCores} vCPU`,
+        `${c.memUsedGB.toFixed(1)} / ${c.memTotalGB.toFixed(1)} GB`,
+        `${c.diskUsedGB.toFixed(0)} / ${c.diskTotalGB.toFixed(0)} GB`,
+        c.netRxBps !== null && c.netTxBps !== null ? `↓ ${formatBytes(c.netRxBps)}/s · ↑ ${formatBytes(c.netTxBps)}/s` : undefined,
+      ],
+    }
+  }, [computed])
 
   const deleteMutation = useMutation({
     mutationFn: () => nodesApi.delete(orgId!, id, token),
@@ -379,63 +380,24 @@ function NodeDetailPage() {
         </div>
       )}
 
-      <ResourceIntro title="Capacity and utilization" description={computed ? "Live measurements from this node. Open Metrics for detailed monitoring." : node.os === "windows" ? "Metrics are not collected from Windows nodes yet." : "Reported hardware capacity. Live utilization is not available yet."}/>
-      {/* Live metrics cards - only rendered when node_exporter is reachable */}
-      {computed && (
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          <MetricCard
-            label="CPU"
-            icon={<Cpu className="h-4 w-4" />}
-            percent={computed.cpuPct}
-            sparkData={computed.cpuSeries}
-            subtitle={computed.cpuPct !== null && computed.cpuCoresUsed !== null
-              ? `${computed.cpuCores} vCPU · ${computed.cpuCoresUsed.toFixed(2)} in use`
-              : `${computed.cpuCores} vCPU`}
-            color="oklch(0.65 0.18 250)"
-          />
-          <MetricCard
-            label="Memory"
-            icon={<MemoryStick className="h-4 w-4" />}
-            percent={computed.memPct}
-            sparkData={computed.memSeries}
-            subtitle={`${computed.memUsedGB.toFixed(1)} / ${computed.memTotalGB.toFixed(1)} GB`}
-            color="oklch(0.65 0.18 300)"
-          />
-          <MetricCard
-            label="Disk"
-            icon={<HardDrive className="h-4 w-4" />}
-            percent={computed.diskPct}
-            sparkData={computed.diskSeries}
-            subtitle={`${computed.diskUsedGB.toFixed(0)} / ${computed.diskTotalGB.toFixed(0)} GB`}
-            color="oklch(0.72 0.18 70)"
-          />
-          <NetworkCard
-            rxMbps={computed.netRxMbps}
-            txMbps={computed.netTxMbps}
-            sparkData={computed.netSeries}
-          />
-        </div>
-      )}
-
-      {/* Static spec cards - hidden when live metrics replace them */}
-      {!computed && (
+      <ResourceIntro
+        title="Capacity and utilization"
+        description={node.os === "windows" ? "Metrics are not collected from Windows nodes yet." : "What this node uses now, and over the range you pick."}
+      />
+      {node.os === "windows" ? (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
           <SpecCard icon={<Cpu className="h-4 w-4" />} label="CPU" value={node.cpuCores ? `${node.cpuCores} cores` : "—"} />
           <SpecCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={node.memoryGB ? `${node.memoryGB.toFixed(1)} GB` : "—"} />
           <SpecCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={node.diskGB ? `${node.diskGB.toFixed(0)} GB` : "—"} />
         </div>
-      )}
-
-      {node.os !== "windows" && (
-        <>
-          <ResourceIntro title="History" description="What this node used over time, from the readings Meshploy stores." />
-          <MetricsHistory
-            queryKey={["node", orgId, id]}
-            load={(range) => metricsApi.nodeHistory(orgId!, id, range, token)}
-            series={NODE_HISTORY}
-            empty="Nothing stored yet. Readings start once the node has been online a few minutes with node_exporter."
-          />
-        </>
+      ) : (
+        <MetricsHistory
+          queryKey={["node", orgId, id]}
+          load={(range) => metricsApi.nodeHistory(orgId!, id, range, token)}
+          series={NODE_HISTORY}
+          empty="Nothing stored yet. Readings start once the node has been online a few minutes with node_exporter."
+          live={live}
+        />
       )}
 
       <ResourceIntro title="Connectivity and role" description="Mesh membership, cluster readiness and workload scheduling for this node." />
@@ -810,116 +772,6 @@ function NodeRolePicker({ node, orgId, token }: { node: ReturnType<typeof toNode
 }
 
 // ─── Live metric components ───────────────────────────────────────────────────
-
-function SparkAreaChart({
-  data,
-  color = "oklch(0.65 0.18 200)",
-  unit = "%",
-  domain,
-}: {
-  data: number[]
-  color?: string
-  unit?: string
-  domain?: [number, number]
-}) {
-  const uid = useId().replace(/:/g, "")
-  if (data.length < 2) return <div className="h-10" />
-  const chartData = data.map((value) => ({ value }))
-  return (
-    <div className="h-10 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
-          <defs>
-            <linearGradient id={`sg-${uid}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor={color} stopOpacity={0.25} />
-              <stop offset="95%" stopColor={color} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          {domain && <YAxis domain={domain} hide />}
-          <Tooltip
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null
-              const v = payload[0]?.value
-              if (v == null) return null
-              return (
-                <div className="rounded border border-border/50 bg-background px-2 py-1 text-xs shadow-lg">
-                  <span className="font-mono font-medium">{Number(v).toFixed(1)}{unit}</span>
-                </div>
-              )
-            }}
-          />
-          <Area
-            type="monotone"
-            dataKey="value"
-            stroke={color}
-            strokeWidth={1.5}
-            fill={`url(#sg-${uid})`}
-            dot={false}
-            isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
-function MetricCard({
-  label,
-  icon,
-  percent,
-  sparkData,
-  subtitle,
-  color,
-}: {
-  label: string
-  icon: React.ReactNode
-  percent: number | null
-  sparkData: number[]
-  subtitle: string
-  color: string
-}) {
-  return (
-    <div className="quiet-surface rounded-xl border border-border bg-card p-5 space-y-3">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
-        {icon}
-        <span className="text-xs font-medium">{label}</span>
-      </div>
-      <p className="text-2xl font-semibold tabular-nums leading-none">
-        {percent !== null ? `${Math.round(percent)}%` : "—"}
-      </p>
-      <SparkAreaChart data={sparkData} color={color} domain={[0, 100]} />
-      <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
-    </div>
-  )
-}
-
-function NetworkCard({
-  rxMbps,
-  txMbps,
-  sparkData,
-}: {
-  rxMbps: number | null
-  txMbps: number | null
-  sparkData: number[]
-}) {
-  return (
-    <div className="quiet-surface rounded-xl border border-border bg-card p-5 space-y-3">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
-        <Network className="h-4 w-4" />
-        <span className="text-xs font-medium">Network</span>
-      </div>
-      <div className="space-y-0.5">
-        <p className="text-sm font-semibold tabular-nums leading-none">
-          {rxMbps !== null ? `↓ ${rxMbps.toFixed(0)} Mbps` : "↓ —"}
-        </p>
-        <p className="text-sm font-semibold tabular-nums leading-none text-muted-foreground">
-          {txMbps !== null ? `↑ ${txMbps.toFixed(0)} Mbps` : "↑ —"}
-        </p>
-      </div>
-      <SparkAreaChart data={sparkData} color="oklch(0.65 0.18 200)" unit=" Mbps" />
-    </div>
-  )
-}
 
 function SpecCard({
   icon,

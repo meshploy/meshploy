@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react"
+import { useId, useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { Loader2 } from "lucide-react"
@@ -22,6 +22,21 @@ export interface HistorySeries<P> {
   format: (v: number) => string
   /** The fixed axis, for a percentage. */
   domain?: [number, number]
+  /** The axis's labels, when the value's own words are too long for it. */
+  axis?: (v: number) => string
+  /** A count: the axis has whole numbers only. */
+  whole?: boolean
+  icon?: ReactNode
+}
+
+/**
+ * What the page reads from the source right now, newer than anything stored:
+ * appended to each chart so its line ends where its number says.
+ */
+export interface LiveTail {
+  points: { t: number; values: (number | null)[] }[]
+  /** Per series, a line under the number, such as "5 vCPU · 1.15 in use". */
+  details?: (string | undefined)[]
 }
 
 type Row = { t: number } & Record<string, number | null>
@@ -35,11 +50,13 @@ export function MetricsHistory<P extends { at: string }>({
   load,
   series,
   empty,
+  live,
 }: {
   queryKey: unknown[]
   load: (range: MetricRange) => Promise<ApiMetricHistory<P>>
   series: HistorySeries<P>[]
   empty: string
+  live?: LiveTail
 }) {
   const [range, setRange] = useState<MetricRange>("24h")
   const q = useQuery({
@@ -51,15 +68,22 @@ export function MetricsHistory<P extends { at: string }>({
   const keep = q.data?.retention_days ?? 30
   const offered = RANGES.filter((r) => r.days <= keep)
 
-  const rows = useMemo<Row[]>(
-    () =>
-      (q.data?.points ?? []).map((p) => {
-        const row: Row = { t: new Date(p.at).getTime() }
-        series.forEach((s, i) => (row[`s${i}`] = s.value(p)))
-        return row
-      }),
-    [q.data, series],
-  )
+  const rows = useMemo<Row[]>(() => {
+    const stored = (q.data?.points ?? []).map((p) => {
+      const row: Row = { t: new Date(p.at).getTime() }
+      series.forEach((s, i) => (row[`s${i}`] = s.value(p)))
+      return row
+    })
+    // The live readings carry on from the last stored minute, so the chart
+    // runs up to now and its last point is the number above it.
+    const after = stored.length ? stored[stored.length - 1].t : 0
+    const tail = (live?.points ?? []).filter((p) => p.t > after).map((p) => {
+      const row: Row = { t: p.t }
+      p.values.forEach((v, i) => (row[`s${i}`] = v))
+      return row
+    })
+    return [...stored, ...tail]
+  }, [q.data, series, live])
   const long = range === "7d" || range === "30d"
   const tick = (t: number) =>
     new Date(t).toLocaleString([], long ? { month: "short", day: "numeric" } : { hour: "2-digit", minute: "2-digit", hour12: false })
@@ -70,7 +94,7 @@ export function MetricsHistory<P extends { at: string }>({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Stored every minute, kept {keep} {keep === 1 ? "day" : "days"}
+          {live ? "Updates every few seconds; kept" : "Stored every minute, kept"} {keep} {keep === 1 ? "day" : "days"}
           {q.data?.resolution === "5m" ? ". Each point is five minutes, averaged" : ""}.
         </p>
         <SegmentedControl value={range} onValueChange={setRange} options={offered} />
@@ -79,7 +103,7 @@ export function MetricsHistory<P extends { at: string }>({
         <div className="flex h-40 items-center justify-center">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
         </div>
-      ) : q.isError ? (
+      ) : q.isError && rows.length < 2 ? (
         <p className="rounded-lg border border-border/60 bg-card px-4 py-8 text-center text-sm text-muted-foreground">
           {(q.error as Error).message}
         </p>
@@ -88,7 +112,7 @@ export function MetricsHistory<P extends { at: string }>({
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {series.map((s, i) => (
-            <HistoryChart key={s.label} series={s} dataKey={`s${i}`} rows={rows} tick={tick} full={full} />
+            <HistoryChart key={s.label} series={s} dataKey={`s${i}`} rows={rows} tick={tick} full={full} detail={live?.details?.[i]} />
           ))}
         </div>
       )}
@@ -102,20 +126,36 @@ function HistoryChart<P>({
   rows,
   tick,
   full,
+  detail,
 }: {
   series: HistorySeries<P>
   dataKey: string
   rows: Row[]
   tick: (t: number) => string
   full: (t: number) => string
+  detail?: string
 }) {
   const gradient = `mh-${useId().replace(/:/g, "")}`
-  const last = rows[rows.length - 1]?.[dataKey]
+  // The newest reading this series has: a live reading may lack one, such as
+  // the pods while their list is still loading.
+  const last = [...rows].reverse().find((r) => r[dataKey] != null)?.[dataKey]
+  const percent = series.domain?.[0] === 0 && series.domain?.[1] === 100
   return (
     <div className="space-y-3 rounded-lg border border-border/60 bg-card p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">{series.label}</span>
-        <span className="text-sm font-semibold tabular-nums">{last != null ? series.format(last) : "-"}</span>
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5 text-muted-foreground">
+          {series.icon}
+          <span className="text-xs font-medium">{series.label}</span>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-2xl font-semibold leading-none tabular-nums">{last != null ? series.format(last) : "-"}</span>
+          {detail && <span className="text-xs text-muted-foreground tabular-nums">{detail}</span>}
+        </div>
+        {percent && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted/50">
+            <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.min(100, Math.max(0, last ?? 0))}%`, background: series.color }} />
+          </div>
+        )}
       </div>
       <ChartContainer config={{ [dataKey]: { label: series.label, color: series.color } }} className="aspect-auto h-[140px] w-full">
         <AreaChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
@@ -141,8 +181,9 @@ function HistoryChart<P>({
             tick={{ fontSize: 10 }}
             tickLine={false}
             axisLine={false}
-            tickFormatter={series.format}
-            width={52}
+            tickFormatter={series.axis ?? series.format}
+            allowDecimals={!series.whole}
+            width={percent ? 40 : 68}
             domain={series.domain ?? [0, "auto"]}
           />
           <ChartTooltip

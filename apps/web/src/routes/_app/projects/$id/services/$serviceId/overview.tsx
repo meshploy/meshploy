@@ -1,8 +1,8 @@
-import { MetricTile, ResourcePanel, ResourceFact, StatusPill } from "@/components/layout/resource-workbench"
+import { ResourcePanel, ResourceFact, StatusPill } from "@/components/layout/resource-workbench"
 import { livePoll } from "@/lib/live-poll"
 import { createFileRoute, useParams, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Server, Box, ExternalLink, Copy, Check, Table2, ArrowRight, Activity, MemoryStick, ArrowUpRight, Eye, EyeOff } from "lucide-react"
+import { Server, Box, ExternalLink, Copy, Check, Table2, ArrowRight, Activity, MemoryStick, ArrowUpRight, Eye, EyeOff, RotateCcw } from "lucide-react"
 import {
   services as servicesApi,
   deployments, variableGroups, stacks,
@@ -20,9 +20,10 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { cn, formatRelativeTime } from "@/lib/utils"
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { MetricsHistory, formatBytes, type HistorySeries } from "@/components/metrics/metrics-history"
+import { MetricsHistory, formatBytes, type HistorySeries, type LiveTail } from "@/components/metrics/metrics-history"
+import { useMetricsStore, type TailPoint } from "@/store/metrics-store"
 import { metrics as metricsApi, type ApiServiceMetricSample } from "@/lib/api"
 
 export const Route = createFileRoute(
@@ -112,11 +113,13 @@ function buildConnectionString(dc: ApiDatabaseConfig, host: string, port?: numbe
   }
 }
 
+const EMPTY_TAIL: TailPoint[] = []
+
 const SERVICE_HISTORY: HistorySeries<ApiServiceMetricSample>[] = [
-  { label: "CPU", color: "oklch(0.65 0.18 250)", value: (p) => p.cpu_millis / 1000, format: (v) => `${v.toFixed(2)} cores` },
-  { label: "Memory", color: "oklch(0.65 0.18 300)", value: (p) => p.mem_bytes, format: formatBytes },
-  { label: "Running pods", color: "oklch(0.7 0.15 160)", value: (p) => p.pods, format: (v) => v.toFixed(0) },
-  { label: "Restarts", color: "oklch(0.7 0.18 30)", value: (p) => p.restarts, format: (v) => v.toFixed(0) },
+  { label: "CPU", icon: <Activity className="h-4 w-4" />, color: "oklch(0.65 0.18 250)", value: (p) => p.cpu_millis / 1000, format: (v) => `${v.toFixed(2)} cores`, axis: (v) => v.toFixed(2) },
+  { label: "Memory", icon: <MemoryStick className="h-4 w-4" />, color: "oklch(0.65 0.18 300)", value: (p) => p.mem_bytes, format: formatBytes },
+  { label: "Running pods", icon: <Box className="h-4 w-4" />, color: "oklch(0.7 0.15 160)", value: (p) => p.pods, format: (v) => v.toFixed(0), whole: true },
+  { label: "Restarts", icon: <RotateCcw className="h-4 w-4" />, color: "oklch(0.7 0.18 30)", value: (p) => p.restarts, format: (v) => v.toFixed(0), whole: true },
 ]
 
 function ServiceOverviewTab() {
@@ -167,19 +170,48 @@ function ServiceOverviewTab() {
   })
 
   const { data: pods, isError: podsError } = useQuery({ queryKey: ["pods", orgId, projectId, serviceId], queryFn: () => servicesApi.listPods(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: 15000 })
-  const { data: metrics, isError: metricsError } = useQuery({ queryKey: ["pod-metrics", orgId, projectId, serviceId], queryFn: () => servicesApi.getPodMetrics(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: 15000, retry: false })
+  const { data: metrics, isError: metricsError, dataUpdatedAt: metricsAt } = useQuery({ queryKey: ["pod-metrics", orgId, projectId, serviceId], queryFn: () => servicesApi.getPodMetrics(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: 15000, retry: false })
   const { data: history, isError: historyError } = useQuery({ queryKey: ["deployments", orgId, projectId, serviceId], queryFn: () => deployments.list(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: livePoll(list => list.some(d => ["pending", "building", "deploying"].includes(d.status))) })
   const { data: groups = [] } = useQuery({ queryKey: ["service-variable-groups", orgId, projectId, serviceId], queryFn: () => variableGroups.listForService(orgId!, projectId, serviceId, token), enabled: !!orgId })
   const { data: stack } = useQuery({ queryKey: ["stack", orgId, projectId, service?.stack_id], queryFn: () => stacks.get(orgId!, projectId, service!.stack_id!, token), enabled: !!orgId && !!service?.stack_id, retry: false })
+  // Each reading of the pods carries the charts on past the last stored
+  // minute, in SERVICE_HISTORY's order: CPU, memory, running pods, restarts.
+  const tailKey = `service:${serviceId}`
+  const tail = useMetricsStore((s) => s.tails[tailKey] ?? EMPTY_TAIL)
+  const addTailPoint = useMetricsStore((s) => s.addTailPoint)
+  useEffect(() => {
+    if (!metricsAt || !metrics?.length) return
+    addTailPoint(tailKey, {
+      t: metricsAt,
+      values: [
+        metrics.reduce((sum, m) => sum + m.cpu_millis, 0) / 1000,
+        metrics.reduce((sum, m) => sum + m.memory_mib, 0) * 1_048_576,
+        pods ? pods.filter((p) => p.phase === "Running").length : null,
+        pods ? pods.reduce((sum, p) => sum + p.restarts, 0) : null,
+      ],
+    })
+  }, [metricsAt, metrics, pods, tailKey, addTailPoint])
+  const live = useMemo<LiveTail | undefined>(() => {
+    if (!service || metricsError || !tail.length) return undefined
+    const ready = pods?.filter((p) => p.ready).length
+    const observed = [...new Set((pods ?? []).map((p) => p.node_name).filter(Boolean))]
+    return {
+      points: tail,
+      details: [
+        `Limit · ${service.cpu_limit || "Not set"}`,
+        `Limit · ${service.memory_limit || "Not set"}`,
+        podsError || !pods ? undefined : `${ready} of ${service.replicas} ready${observed.length ? ` · on ${observed.join(", ")}` : ""}`,
+        undefined,
+      ],
+    }
+  }, [service, metricsError, tail, pods, podsError])
+
   if (!service) return null
 
   const isDatabase = service.type === "database"
   const observedNodeNames = [...new Set((pods ?? []).map(p => p.node_name).filter(Boolean))]
   const node = service.node_id ? nodes.find(n => n.id === service.node_id) : observedNodeNames.length === 1 ? nodes.find(n => n.k8sNodeName === observedNodeNames[0]) : undefined
   const latest = history?.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-  const cpu = metrics?.length ? (metrics.reduce((sum, m) => sum + m.cpu_millis, 0) / 1000).toFixed(2) : null
-  const memory = metrics?.length ? Math.round(metrics.reduce((sum, m) => sum + m.memory_mib, 0)) : null
-  const readyPods = pods?.filter(p => p.ready).length
   const attachedRoutes = projectRoutes.filter((r) =>
     r.targets.some((t) => t.service_id === service.id)
   )
@@ -204,17 +236,13 @@ function ServiceOverviewTab() {
 
   return (
     <div className="console-page resource-overview space-y-6">
-      <div className="resource-metrics">
-        <MetricTile icon={Activity} label="CPU" value={cpu ?? "-"} unit={cpu ? "cores" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.cpu_limit || "Not set"}`} />
-        <MetricTile icon={MemoryStick} label="Memory" value={memory ?? "-"} unit={memory !== null ? "MiB" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.memory_limit || "Not set"}`} />
-        <MetricTile icon={Box} label="Replicas" value={podsError || !pods ? "-" : readyPods} unit={`/ ${service.replicas} ready`} detail={podsError ? "Pod readiness unavailable" : observedNodeNames.length ? `On ${observedNodeNames.join(", ")}` : "No placement reported"} />
-      </div>
-      <ResourcePanel title="History" description="CPU, memory and restarts over time, summed over the service's pods.">
+      <ResourcePanel title="Usage" description="What the service uses now, and over the range you pick, summed over its pods.">
         <MetricsHistory
           queryKey={["service", orgId, projectId, serviceId]}
           load={(range) => metricsApi.serviceHistory(orgId!, projectId, serviceId, range, token)}
           series={SERVICE_HISTORY}
           empty="Nothing stored yet. Readings start a minute or two after the service is running."
+          live={live}
         />
       </ResourcePanel>
       <div className="resource-overview-columns">

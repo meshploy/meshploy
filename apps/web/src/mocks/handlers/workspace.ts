@@ -34,6 +34,9 @@ const O = "/api/v1/orgs/:orgId"
 const metricSettings = { retention_days: 7, choices: [1, 3, 7, 14, 30] }
 const RANGE_MINUTES: Record<string, number> = { "1h": 60, "6h": 360, "24h": 1440, "7d": 10080, "30d": 43200 }
 
+// The demo node's counters, advanced at each live reading.
+const demoLive = { t: 0, cpuTotal: 1e6, cpuIdle: 7.5e5, rx: 1e9, tx: 6e8 }
+
 // A demo metrics history: a point a minute up to a day, five minutes beyond.
 function demoHistory(request: Request, point: (i: number, at: string) => object) {
   const range = new URL(request.url).searchParams.get("range") ?? "24h"
@@ -643,17 +646,26 @@ export const workspaceHandlers = [
     return json(org)
   }),
   http.get(`${O}/nodes/:nodeId/metrics`, () => {
+    // Counters that move like the demo history does, so the live readings
+    // carry its line on rather than jumping away from it.
     const t = Date.now() / 1000
+    const dt = demoLive.t ? t - demoLive.t : 5
+    const busy = Math.min(0.95, Math.max(0.05, 0.22 + 0.1 * Math.sin(t / 40) + 0.08 * (Math.random() - 0.5)))
+    demoLive.cpuTotal += dt * 4
+    demoLive.cpuIdle += dt * 4 * (1 - busy)
+    demoLive.rx += dt * (120000 + 50000 * Math.sin(t / 30) + 20000 * Math.random())
+    demoLive.tx += dt * (80000 + 25000 * Math.cos(t / 35) + 10000 * Math.random())
+    demoLive.t = t
     return json({
-      cpu_total_seconds: t * 4,
-      cpu_idle_seconds: t * 3,
+      cpu_total_seconds: demoLive.cpuTotal,
+      cpu_idle_seconds: demoLive.cpuIdle,
       cpu_cores: 4,
       memory_total_bytes: 8589934592,
-      memory_available_bytes: 5368709120,
+      memory_available_bytes: 8589934592 - (3.2e9 + 2e8 * Math.sin(t / 60)),
       disk_total_bytes: 85899345920,
-      disk_avail_bytes: 60129542144,
-      net_rx_bytes: t * 1200,
-      net_tx_bytes: t * 800,
+      disk_avail_bytes: 85899345920 - 27.1e9,
+      net_rx_bytes: demoLive.rx,
+      net_tx_bytes: demoLive.tx,
     })
   }),
   http.get(`${O}/nodes/:nodeId/metrics/history`, ({ request }) =>
@@ -1128,8 +1140,9 @@ export const workspaceHandlers = [
       s?.status === "running"
         ? Array.from({ length: s.replicas || 1 }, (_, i) => ({
             pod_name: `${s.name}-6d8f4b9c7-demo${i}`,
-            cpu_millis: 40 + i * 6,
-            memory_mib: 120 + i * 4,
+            // Moving like the demo history, so the live readings carry its line on.
+            cpu_millis: Math.round(45 + 20 * Math.sin(Date.now() / 480000) + 6 * Math.random() + i * 6),
+            memory_mib: Math.round(124 + 9 * Math.sin(Date.now() / 1800000) + i * 4),
           }))
         : []
     )
@@ -1142,7 +1155,7 @@ export const workspaceHandlers = [
       mem_bytes: Math.round(1.3e8 + 1e7 * Math.sin(i / 30)),
       mem_bytes_max: 1.5e8,
       pods: 1,
-      restarts: i > 40 ? 1 : 0,
+      restarts: 0,
     })))
   ),
   http.get(`${S}/database-config`, ({ params }) => {
