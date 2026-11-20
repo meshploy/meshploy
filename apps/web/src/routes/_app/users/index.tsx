@@ -26,6 +26,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { RoleBadge } from "@/components/users/member-role"
 import { useOrgStore, useIsAdmin, useOrgRole } from "@/store/org-store"
 import { HelpButton } from "@/help/help-button"
+import { EeUsersSection } from "@/ee"
 import type { OrgRole } from "@/types"
 
 export const Route = createFileRoute("/_app/users/")({
@@ -114,6 +115,8 @@ function UsersPage() {
           ))}
         {!members.some(m => `${m.user_name} ${m.user_email}`.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || m.role === roleFilter)) && !invitations.some(i => i.email.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || i.role === roleFilter)) && <tr><td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">No matching users or invitations.</td></tr>}</tbody></table></div>
       )}
+
+      {isAdmin && EeUsersSection && <EeUsersSection orgId={orgId} />}
 
       <InviteDialog open={showInvite} onOpenChange={setShowInvite} orgId={orgId} token={token} />
     </div>

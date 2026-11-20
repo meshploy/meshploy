@@ -63,6 +63,9 @@ export const EeProjectLinks: React.ComponentType<{ orgId: string; projectId: str
  */
 export const EeServiceAccess: React.ComponentType<{ orgId: string; projectId: string; serviceId: string }> | null = null
 
+/** Drawn on the Users page below its members, for its owners and admins: people an edition knows who are not members. */
+export const EeUsersSection: React.ComponentType<{ orgId: string }> | null = null
+
 /** Drawn in the side column of a member's page, for what an edition knows about them. */
 export const EeMemberPanel: React.ComponentType<{ orgId: string; userId: string }> | null = null
 
