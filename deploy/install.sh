@@ -1572,16 +1572,21 @@ for u in json.load(sys.stdin):
 " || true)"
   [[ -z "$HEADSCALE_USER_ID" ]] && die "Could not resolve Headscale user ID for '${HEADSCALE_USER}'"
 
+  # This key joins the gateway itself and nothing else: single use, short-lived,
+  # expired once the gateway has joined, and never printed. A worker gets its own
+  # key from the API when it registers (console: Nodes, Connect a node).
   _PREAUTH_RAW="$($COMPOSE_CMD exec -T headscale \
-    headscale preauthkeys create --user "$HEADSCALE_USER_ID" --expiration 1h --reusable \
+    headscale preauthkeys create --user "$HEADSCALE_USER_ID" --expiration 10m -o json \
     2>&1 || true)"
   PREAUTH_KEY="$(echo "$_PREAUTH_RAW" | grep -oE 'hskey-auth-[A-Za-z0-9_-]+' | head -1 || true)"
+  PREAUTH_KEY_ID="$(echo "$_PREAUTH_RAW" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)"
   if [[ -z "$PREAUTH_KEY" ]]; then
+    # The output names no key, so it holds none to leak.
     error "headscale preauthkeys output was:"
     echo "$_PREAUTH_RAW" >&2
     die "Failed to generate pre-auth key. Check: $COMPOSE_CMD logs headscale"
   fi
-  success "Pre-auth key generated (reusable, 1h): ${BOLD}${PREAUTH_KEY}${RESET}"
+  success "Pre-auth key generated for this machine's join (single use, 10 minutes)"
 
   # Long expiry on purpose: this is a machine-to-machine key held by the API on
   # the same host as the Headscale server it authenticates to, so rotation buys
@@ -1621,6 +1626,11 @@ for u in json.load(sys.stdin):
     --accept-routes \
     || warn "joining the mesh returned non-zero; it may already be joined, check: ${MESH_CMD[*]} status"
   success "This node joined the mesh as 'gateway'"
+  # Spent by the join; expired as well, so a failed join leaves no live key.
+  if [[ -n "$PREAUTH_KEY_ID" ]]; then
+    $COMPOSE_CMD exec -T headscale headscale preauthkeys expire --id "$PREAUTH_KEY_ID" --force &>/dev/null || true
+  fi
+  unset PREAUTH_KEY
 
   # ── Keep published ports on the mesh ────────────────────────────────────────
   # Without this kube-proxy binds every published port on every address of the
@@ -1836,16 +1846,11 @@ NEUNIT
   echo -e "    ${YELLOW}while the instance has no owner.${RESET}"
   echo -e "    Lost it?  ${BOLD}sudo meshploy setup-token show${RESET}  on this server."
   echo
-  echo -e "  ${BOLD}To add a worker node${RESET}"
-  echo -e "    1. Headscale pre-auth key (valid 1h, reusable):"
-  echo -e "       ${BOLD}${CYAN}${PREAUTH_KEY}${RESET}"
-  echo -e "    2. Node registration token (shown in dashboard → Cluster):"
-  echo -e "       Generate one at ${CYAN}https://console.${DOMAIN}${RESET} → Cluster → Add a worker node"
-  echo -e "    3. k3s cluster join token (also shown in dashboard → Cluster):"
-  echo -e "       ${BOLD}${CYAN}${K3S_TOKEN}${RESET}"
-  echo -e "    Then on the worker machine run:"
-  echo -e "    ${BOLD}curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o /tmp/get.sh${RESET}"
-  echo -e "    ${BOLD}sudo bash /tmp/get.sh${RESET}"
+  # No join secret is printed: the console hands each machine a one-use
+  # command, and registration gives it its mesh key and cluster token.
+  echo -e "  ${BOLD}To add a machine${RESET}"
+  echo -e "    In the console, open ${BOLD}Nodes${RESET} and press ${BOLD}Connect a node${RESET}."
+  echo -e "    It gives a one-time command to run on that machine."
   echo
   echo -e "  ${BOLD}Next steps${RESET}"
   # Mode-aware: telling a self-managed-DNS operator to add an NS record is the
