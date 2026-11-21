@@ -37,6 +37,14 @@ func (s *NodeService) KeepBuilders(ctx context.Context) {
 func (s *NodeService) keepBuilders(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
+	// The gateway is a build node from its record, and its label is otherwise
+	// applied only when someone opens the Nodes page or starts a build: on a
+	// new install that would leave nothing to keep the builder on.
+	if s.db != nil {
+		if all, err := appk8s.GetClusterNodes(ctx, s.k8s); err == nil {
+			applyBuildRoles(ctx, s.db, s.k8s, all)
+		}
+	}
 	nodes, err := appk8s.BuildNodes(ctx, s.k8s)
 	if err != nil {
 		log.Printf("keep the builder: list build nodes: %v", err)

@@ -10,8 +10,10 @@ import (
 
 	"github.com/meshploy/packages/db"
 	appk8s "github.com/meshploy/packages/server/k8s"
+	"gorm.io/gorm"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // buildUnschedulableGrace is how long a build pod may go unplaced because no
@@ -46,7 +48,7 @@ func (s *DeploymentService) buildNodeProblem(ctx context.Context, pinned string)
 	if err != nil || readyBuildNodes(nodes) > 0 {
 		return ""
 	}
-	if s.applyBuildRoles(ctx, nodes) {
+	if s.db != nil && applyBuildRoles(ctx, s.db, s.k8s, nodes) {
 		if nodes, err = appk8s.GetClusterNodes(ctx, s.k8s); err != nil || readyBuildNodes(nodes) > 0 {
 			return ""
 		}
@@ -66,19 +68,16 @@ func readyBuildNodes(nodes []appk8s.ClusterNode) int {
 
 // applyBuildRoles labels every cluster node whose record has a build role but
 // whose labels do not show it yet. It reports whether it labelled any.
-func (s *DeploymentService) applyBuildRoles(ctx context.Context, nodes []appk8s.ClusterNode) bool {
-	if s.db == nil {
-		return false
-	}
+func applyBuildRoles(ctx context.Context, gdb *gorm.DB, client kubernetes.Interface, nodes []appk8s.ClusterNode) bool {
 	var records []db.Node
-	if err := s.db.WithContext(ctx).
+	if err := gdb.WithContext(ctx).
 		Where("mesh_role IN ?", []string{string(db.MeshRoleWorkloadBuilder), string(db.MeshRoleBuilder)}).
 		Find(&records).Error; err != nil {
 		return false
 	}
 	changed := false
 	for name, role := range buildRoleTargets(nodes, records) {
-		if err := appk8s.SetNodeMeshRole(ctx, s.k8s, name, NodePlacement(role)); err != nil {
+		if err := appk8s.SetNodeMeshRole(ctx, client, name, NodePlacement(role)); err != nil {
 			log.Printf("warning: apply build role to node %s: %v", name, err)
 			continue
 		}
