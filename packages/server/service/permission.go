@@ -130,7 +130,10 @@ func (s *PermissionService) ListForUser(ctx context.Context, orgID, userID uuid.
 	return out, nil
 }
 
-// ListForResource returns all users with any permission grant on a specific resource.
+// ListForResource returns the organization's members with any permission
+// grant on a resource. A person who is not a member (someone an app is shared
+// with) holds a view grant so the gate lets them open it, but can never use
+// the console, so they are not listed among the people who manage it.
 func (s *PermissionService) ListForResource(ctx context.Context, orgID uuid.UUID, resourceType db.ResourceType, resourceID uuid.UUID) ([]PermissionWithUser, error) {
 	var rows []struct {
 		UserID   uuid.UUID
@@ -143,6 +146,7 @@ func (s *PermissionService) ListForResource(ctx context.Context, orgID uuid.UUID
 		SELECT rp.user_id, u.username, u.email, rp.action, rp.source
 		FROM resource_permissions rp
 		JOIN users u ON u.id = rp.user_id
+		JOIN organization_members om ON om.user_id = rp.user_id AND om.organization_id = rp.organization_id
 		WHERE rp.organization_id = ? AND rp.resource_type = ? AND rp.resource_id = ?
 		ORDER BY u.username, rp.action
 	`, orgID, resourceType, resourceID).Scan(&rows).Error

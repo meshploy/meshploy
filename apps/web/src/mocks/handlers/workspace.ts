@@ -1810,8 +1810,9 @@ workspaceHandlers.push(
   ),
   http.get(`${O}/:resourceType/:resourceId/permissions`, ({ params }) =>
     json(
+      // Members only, as the API: a share's grant is no say in the console.
       db.permissions
-        .filter((p) => p.resource_id === params.resourceId)
+        .filter((p) => p.resource_id === params.resourceId && db.members.some((m) => m.user_id === p.user_id))
         .map((p) => ({
           ...p,
           ...db.members.find((m) => m.user_id === p.user_id),

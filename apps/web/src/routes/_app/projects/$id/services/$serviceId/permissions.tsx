@@ -1,4 +1,4 @@
-import { ResourceIntro } from "@/components/layout/resource-workbench"
+import { ResourceIntro, ResourcePanel } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -26,25 +26,37 @@ function ServicePermissionsTab() {
   })
   // Who outside the team may open it is a sign-in in front of a web address,
   // so it is offered only for a service that serves one. A database or any
-  // other TCP service is reached over the mesh, which the team section covers.
+  // other TCP service is reached over the mesh, which the section below covers.
   const Outside = EeServiceAccess && svc?.ports?.some((p) => p.is_http) ? EeServiceAccess : null
+
+  const manage = (
+    <ResourcePermissionsSection
+      orgId={orgId}
+      projectId={projectId}
+      resourceType="service"
+      resourceId={serviceId}
+      token={token}
+    />
+  )
 
   return (
     <div className="console-page space-y-6">
       {Outside && (
         <>
-          <ResourceIntro title="Access" description="Who outside your team may open this service, and which members may manage it" />
+          <ResourceIntro title="Access" description="Who can open this service, and who can manage it in the console" />
           <Outside orgId={orgId} projectId={projectId} serviceId={serviceId} />
         </>
       )}
-      <ResourceIntro title={Outside ? "Your team" : "Access"} description="Override project-level access for specific members on this service" />
-      <ResourcePermissionsSection
-        orgId={orgId}
-        projectId={projectId}
-        resourceType="service"
-        resourceId={serviceId}
-        token={token}
-      />
+      {Outside ? (
+        <ResourcePanel title="Who can manage it" description="What members may do with this service in the console.">
+          {manage}
+        </ResourcePanel>
+      ) : (
+        <>
+          <ResourceIntro title="Access" description="What members may do with this service in the console" />
+          {manage}
+        </>
+      )}
     </div>
   )
 }

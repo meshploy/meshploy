@@ -173,3 +173,31 @@ func TestVisibleProjectIDs(t *testing.T) {
 		assert.True(t, ids[pID])
 	})
 }
+
+// A service's list of who manages it holds members only. Someone an app is
+// shared with holds a view grant on it, but is no member and never uses the
+// console, so the list leaves them out.
+func TestListForResourceHoldsMembersOnly(t *testing.T) {
+	ctx := context.Background()
+	svcs, orgID, _, gdb := setupAgentFixture(t)
+
+	ravi := meshdb.User{Username: "ravi", Email: "ravi@example.com", Kind: meshdb.UserHuman}
+	asha := meshdb.User{Username: "guest-asha", Email: "asha@example.com", Kind: "guest"}
+	require.NoError(t, gdb.Create(&ravi).Error)
+	require.NoError(t, gdb.Create(&asha).Error)
+	_, err := svcs.Orgs.AddMember(ctx, orgID, service.AddMemberInput{Email: ravi.Email, Role: meshdb.RoleMember})
+	require.NoError(t, err)
+	shop := meshdb.Project{OrganizationID: orgID, Name: "shop", Slug: "shop"}
+	require.NoError(t, gdb.Create(&shop).Error)
+	web := meshdb.Service{ProjectID: shop.ID, Name: "web", Slug: "web"}
+	require.NoError(t, gdb.Create(&web).Error)
+	for _, u := range []meshdb.User{ravi, asha} {
+		require.NoError(t, gdb.Create(&meshdb.ResourcePermission{OrganizationID: orgID, UserID: u.ID,
+			ResourceType: meshdb.ResourceService, ResourceID: web.ID, Action: meshdb.ActionView}).Error)
+	}
+
+	rows, err := svcs.Permissions.ListForResource(ctx, orgID, meshdb.ResourceService, web.ID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, ravi.ID, rows[0].UserID)
+}

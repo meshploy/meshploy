@@ -137,12 +137,13 @@ export function ResourcePermissionsSection({ orgId, projectId, resourceType, res
       {/* The page above it gives the heading. */}
       <p className="text-xs text-muted-foreground">
         <Lock className="inline h-3 w-3 mr-0.5 mb-0.5" />
-        Locked permissions are inherited from the project. Use the other controls to change access for this resource.
+        Locked ones come from the project. The others apply to this {resourceType} only.
       </p>
 
       {userGrants.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/50 py-8 flex flex-col items-center gap-2 text-muted-foreground">
-          <p className="text-xs">No members have access to this {resourceType} yet</p>
+          <p className="text-xs">Only owners and admins can manage this {resourceType}.</p>
+          <p className="text-xs">Give a member access from their page in Users.</p>
         </div>
       ) : (
         <div className="console-record-list rounded-xl border border-border overflow-hidden divide-y divide-border/40">
