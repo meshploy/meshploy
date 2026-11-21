@@ -78,7 +78,8 @@ test.describe("Overview", () => {
     })
     await expect(page.getByText(/Memory/).first()).toBeVisible()
     await expect(page.getByText(/Disk/).first()).toBeVisible()
-    await expect(page.getByText("38%").first()).toBeVisible()
+    // The demo's readings drift like real ones, so any percentage will do.
+    await expect(page.getByText(/^\d+%$/).first()).toBeVisible()
   })
 
   // Both lists grow on their own - more deployments, more projects - and a row
