@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.26.0](https://github.com/meshploy/meshploy/compare/v0.25.0...v0.26.0) (2026-11-21)
+
+
+### Features
+
+* **mcp:** share_app takes any role the app has, and says which headers tell the app who is signed in ([852eed5](https://github.com/meshploy/meshploy/commit/852eed5a5dbc8caf7a36ccbeeb915de2f606a040))
+* **metrics:** a node's and a service's usage is one card per measure, its number live and its chart running from the stored history up to that reading ([3c46efb](https://github.com/meshploy/meshploy/commit/3c46efbfb026815b438233eb84c673d600490f79))
+* **metrics:** nodes and services are read every minute and kept, as five-minute points after a day, for the days an organization chooses, and charted on their pages ([402c7fe](https://github.com/meshploy/meshploy/commit/402c7fe27b1fc3a226e2f0026991af7568fd54e3))
+* **templates:** a template's notes, such as its first sign-in, show on its page and where it is deployed ([e3f18f7](https://github.com/meshploy/meshploy/commit/e3f18f74c5090b934ae037a013141ce1a58514aa))
+* **users:** an edition can draw a section on the Users page below the members ([dca0539](https://github.com/meshploy/meshploy/commit/dca05399f125251ad463e6f836a6155b5dc00870))
+
+
+### Bug Fixes
+
+* **access:** a service's console permissions list members only, as "Who can manage it" in a card beside who can open it ([07ec6cc](https://github.com/meshploy/meshploy/commit/07ec6cc46d687753396e9ce7537eb3a45a400a54))
+* **builds:** the builder is downloaded ahead and pinned on every build node, so no cleanup removes it and a build no longer starts by downloading it again ([681e002](https://github.com/meshploy/meshploy/commit/681e002f64bb191573441f6255c52a99fbee3e9f))
+* **builds:** the builder keeper marks the gateway a build node first ([f5a8c72](https://github.com/meshploy/meshploy/commit/f5a8c723cb31ae5571896a08ea9d199fab32b593))
+* **cluster:** a cluster agent that cannot be reached fails a call in seconds, and the calls after it at once, instead of each waiting half a minute ([ed5f41f](https://github.com/meshploy/meshploy/commit/ed5f41f39177d53733463def60991f9d26d6af93))
+* **nodes:** a node's stored status follows its mesh peer, so a server that has left reads offline on the overview instead of online for good ([9007ba7](https://github.com/meshploy/meshploy/commit/9007ba7e21796bf1cfb10c6511f5109b0d17df8f))
+* **services:** a restart flags a service only until it has stayed up two minutes since, so one that waited on its database and runs shows no banner ([0fa1775](https://github.com/meshploy/meshploy/commit/0fa17755508b17671517c6e685c00f273f9993fa))
+* **uninstall:** the compose stack is found in /opt/meshploy ([30df3c6](https://github.com/meshploy/meshploy/commit/30df3c607cb9f5baad9796e9efb8e7805f2c6857))
+* **uninstall:** the images the compose file names, k3s's node password and Meshploy's empty lib folder go with the rest ([a7bce47](https://github.com/meshploy/meshploy/commit/a7bce47a58d10acd2002ef3d14eca474f09b39e3))
+
 ## [0.25.0](https://github.com/meshploy/meshploy/compare/v0.24.0...v0.25.0) (2026-11-15)
 
 
