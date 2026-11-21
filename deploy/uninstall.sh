@@ -41,7 +41,7 @@ MESHPLOY_DIR="${MESHPLOY_DIR:-/opt/meshploy}"
 MESHPLOY_CLI="${MESHPLOY_CLI:-/usr/local/bin/meshploy}"
 
 # Auto-detect worker: no docker-compose.yml in deploy dir and k3s-agent is present
-if ! $WORKER && ! [[ -f "/opt/meshploy/deploy/docker-compose.yml" ]] && command -v k3s &>/dev/null && systemctl is-enabled k3s-agent &>/dev/null 2>&1; then
+if ! $WORKER && ! [[ -f "$MESHPLOY_DIR/docker-compose.yml" ]] && command -v k3s &>/dev/null && systemctl is-enabled k3s-agent &>/dev/null 2>&1; then
   WORKER=true
 fi
 
@@ -86,9 +86,11 @@ remove_tailscale_package() {
   sudo rm -rf /var/lib/tailscale /etc/tailscale
 }
 
-# Resolve deploy dir — works whether run from /tmp, the repo, or /opt/meshploy/deploy
+# The compose files: where the installer puts them (get.sh unpacks deploy/
+# straight into /opt/meshploy), else beside this script, as in the repo. So it
+# works whether run from /opt/meshploy, /tmp or the repo.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
-DEPLOY_DIR="/opt/meshploy/deploy"
+DEPLOY_DIR="$MESHPLOY_DIR"
 if [[ -f "$DEPLOY_DIR/docker-compose.yml" ]]; then
   cd "$DEPLOY_DIR"
 elif [[ -f "$SCRIPT_DIR/docker-compose.yml" ]]; then
