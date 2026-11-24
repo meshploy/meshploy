@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.27.0](https://github.com/meshploy/meshploy/compare/v0.26.0...v0.27.0) (2026-11-24)
+
+
+### Features
+
+* **install:** a provider server template, set up on each server's first boot ([4f92709](https://github.com/meshploy/meshploy/commit/4f927095010f0699b23e38394de6ee252a815f29))
+
+
+### Bug Fixes
+
+* **auth:** the first account's domain and gateway are in place before the console opens ([083be26](https://github.com/meshploy/meshploy/commit/083be2619c0dc0723865a5af0c97c1c9904eaa20))
+* **install:** the browser setup finishes on a fresh server ([54c5512](https://github.com/meshploy/meshploy/commit/54c55126ff13f99261ef391485b018ae2358fca9))
+* **install:** the gateway's join key is single use, expired after the join, and no join secret is printed ([6403bed](https://github.com/meshploy/meshploy/commit/6403bedb43648400e4e1a91579b105999edd9fcc))
+* **logs:** an app's log waits for its starting container, and colour codes are stripped ([1308187](https://github.com/meshploy/meshploy/commit/130818787379c3e63252ca206d8fdbad0d9a6043))
+
 ## [0.26.0](https://github.com/meshploy/meshploy/compare/v0.25.0...v0.26.0) (2026-11-21)
 
 
