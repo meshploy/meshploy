@@ -219,9 +219,46 @@ func dumpCmd(engine db.DatabaseEngine, dbUser, dbName, dbPass string) ([]string,
 		}
 		return []string{"sh", "-c", "redis-cli --rdb - 2>/dev/null | gzip"}, nil
 
+	case db.DatabaseClickHouse:
+		// ClickHouse has no dump tool that keeps its engines, views and
+		// dictionaries, so its own BACKUP writes the database as one zip to
+		// the server's backups folder (allowed by the image's default
+		// config), which is streamed out and removed. The database is kept
+		// in the backup as clickHouseBackupDB, so the zip restores into a
+		// database of any name.
+		f := clickHouseBackupFile()
+		path := clickHouseBackupDir + "/" + f
+		q := fmt.Sprintf("BACKUP DATABASE %s AS %s TO File('%s')", chIdent(dbName), clickHouseBackupDB, f)
+		return []string{"sh", "-c", fmt.Sprintf(
+			"%s; clickhouse-client -u '%s' --password '%s' -q '%s' >/dev/null && cat '%s'; rc=$?; rm -f '%s'; exit $rc",
+			clickHouseSweep, u, p, shellEsc(q), path, path,
+		)}, nil
+
 	default:
 		return nil, fmt.Errorf("unsupported engine for automated backup: %s", engine)
 	}
+}
+
+// clickHouseBackupDir is where ClickHouse's File() backups live: the
+// "backups" folder its default config allows, under its data path.
+var clickHouseBackupDir = dbDataPath(db.DatabaseClickHouse) + "/backups"
+
+// clickHouseBackupDB is the name a ClickHouse database has inside its backup.
+const clickHouseBackupDB = "backup"
+
+// clickHouseSweep removes backup files a run left behind when its pod or the
+// API stopped mid-way, so they do not fill the database's volume. A day is
+// longer than any run.
+var clickHouseSweep = "find '" + clickHouseBackupDir + "' -maxdepth 1 -name 'meshploy-*.zip' -mmin +1440 -delete 2>/dev/null"
+
+// clickHouseBackupFile names one run's file in the backups folder.
+func clickHouseBackupFile() string {
+	return fmt.Sprintf("meshploy-%d.zip", time.Now().UnixNano())
+}
+
+// chIdent quotes a ClickHouse identifier.
+func chIdent(name string) string {
+	return "`" + strings.NewReplacer(`\`, `\\`, "`", "\\`").Replace(name) + "`"
 }
 
 // ─── Service DB backup ────────────────────────────────────────────────────────
@@ -308,8 +345,11 @@ func (s *BackupService) execBackup(ctx context.Context, cfgID uuid.UUID) {
 	}
 
 	ext := ".sql.gz"
-	if dc.Engine == db.DatabaseMongoDB {
+	switch dc.Engine {
+	case db.DatabaseMongoDB:
 		ext = ".dump.gz"
+	case db.DatabaseClickHouse:
+		ext = ".zip"
 	}
 	key := backupKey(cfg.PathPrefix, dc.Slug, time.Now(), ext)
 	if err := uploadToS3(ctx, s3c, cfg.StorageIntegration.Bucket, key, reader); err != nil {
@@ -344,6 +384,30 @@ func restoreCmd(engine db.DatabaseEngine, dbUser, dbName, dbPass string) ([]stri
 		// mongorestore --archive --gzip reads a gzipped archive from stdin.
 		return []string{"sh", "-c", fmt.Sprintf(
 			"mongorestore --authenticationDatabase admin -u '%s' -p '%s' -d '%s' --archive --gzip", u, p, n,
+		)}, nil
+	case db.DatabaseClickHouse:
+		// The zip is written to the backups folder and restored first into a
+		// scratch database, which proves it restores before the live one is
+		// touched. Then the live database is dropped and restored from the
+		// same file. Renaming the scratch database over it would be quicker,
+		// but its views would keep reading the scratch name.
+		f := clickHouseBackupFile()
+		path := clickHouseBackupDir + "/" + f
+		scratch := dbName + "_meshploy_restore"
+		client := fmt.Sprintf("clickhouse-client -u '%s' --password '%s' -q", u, p)
+		run := func(q string) string { return client + " '" + shellEsc(q) + "'" }
+		from := fmt.Sprintf("FROM File('%s')", f)
+		steps := []string{
+			"cat > '" + path + "'",
+			run("DROP DATABASE IF EXISTS " + chIdent(scratch) + " SYNC"),
+			run(fmt.Sprintf("RESTORE DATABASE %s AS %s %s", clickHouseBackupDB, chIdent(scratch), from)),
+			run("DROP DATABASE " + chIdent(scratch) + " SYNC"),
+			run("DROP DATABASE IF EXISTS " + chIdent(dbName) + " SYNC"),
+			run(fmt.Sprintf("RESTORE DATABASE %s AS %s %s", clickHouseBackupDB, chIdent(dbName), from)),
+		}
+		return []string{"sh", "-c", fmt.Sprintf(
+			"%s; %s; rc=$?; rm -f '%s'; exit $rc",
+			clickHouseSweep, strings.Join(steps, " && "), path,
 		)}, nil
 	default:
 		return nil, fmt.Errorf("restore not supported for engine: %s", engine)
