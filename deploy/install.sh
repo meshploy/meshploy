@@ -325,7 +325,10 @@ ask_yn() {
 # empty. Last occurrence wins, matching how a shell would read the file.
 read_env() {
   [[ -f .env ]] || return 0
-  grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2-
+  # A key not there yet is an empty answer, not a failure: under pipefail grep's
+  # "no match" would end the script, and the browser setup's .env holds only the
+  # setup token when it gets here.
+  grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- || true
 }
 
 # set_env <key> <value> — rewrite KEY=value in .env, appending it when absent.
