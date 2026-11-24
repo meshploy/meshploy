@@ -8,8 +8,8 @@
 <h1 align="center">Meshploy</h1>
 
 <p align="center">
-  <strong>Self-hosted PaaS. Like Heroku or Vercel, on your own servers.</strong><br>
-  Push your code, get a live app. One cloud that stays yours.
+  <strong>A self-hosted, Kubernetes-powered PaaS, built on WireGuard.</strong><br>
+  Push your code, get a live app. One front door; everything else connects out, no open ports.
 </p>
 
 <p align="center">
