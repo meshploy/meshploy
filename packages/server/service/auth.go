@@ -136,8 +136,13 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User,
 		return nil, err
 	}
 
+	// Done before answering, not after: the console opens on the overview the
+	// moment this returns, and asks at once for the gateway node and domain
+	// this writes. They are a few rows, and an account whose first page says
+	// "No domain is configured" for a domain it has is a wrong first page.
+	// Not cancelled with the request: half a seeding is worse than a slow one.
 	if s.onFirstRegistration != nil {
-		go s.onFirstRegistration(context.Background(), org.ID)
+		s.onFirstRegistration(context.WithoutCancel(ctx), org.ID)
 	}
 
 	return user, nil
