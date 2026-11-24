@@ -81,7 +81,11 @@ RUN BUILDKIT_VERSION="$(buildkitd --version | awk '{print $3}' | sed 's/^v//')" 
     buildctl --version
 
 # ── Railpack ──────────────────────────────────────────────────────────────────
-RUN curl -fsSL https://raw.githubusercontent.com/railwayapp/railpack/main/install.sh | bash && \
+# Pinned: left to find "latest" itself, the installer asks GitHub's API, which
+# refuses CI runners when they are over its anonymous rate limit and fails the
+# build. Raise it on purpose, and check MISE_VERSION below with it.
+RUN RAILPACK_VERSION="0.43.1" && export RAILPACK_VERSION && \
+    curl -fsSL https://raw.githubusercontent.com/railwayapp/railpack/main/install.sh | bash && \
     railpack --version
 
 # ── Pre-seed railpack's mise cache with the musl binary ───────────────────────
