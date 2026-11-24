@@ -1867,11 +1867,15 @@ func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uui
 	}
 	flush()
 
-	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, logOpts)
-	stream, err := req.Stream(ctx)
+	stream, err := s.openRuntimeLogs(ctx, namespace, podName, logOpts, sendLine)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		sendLine("Cannot stream live container logs: " + err.Error())
-		sendLine("Hint: ensure workers joined k3s with --node-ip=<mesh_ip>")
+		if nodeUnreachable(err) {
+			sendLine("Hint: ensure workers joined k3s with --node-ip=<mesh_ip>")
+		}
 		sendDone()
 		return nil
 	}
@@ -1889,6 +1893,69 @@ func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uui
 
 	sendDone()
 	return nil
+}
+
+// runtimeLogWait bounds how long a log stream waits for a container that is
+// still starting, as a new version's is during a rollout.
+const runtimeLogWait = 3 * time.Minute
+
+// openRuntimeLogs opens a pod's log stream, waiting while its container is
+// still being created: a new version's logs are asked for before it runs, and
+// that is a wait, not an error. It says once that the app is starting.
+func (s *DeploymentService) openRuntimeLogs(ctx context.Context, namespace, podName string, opts *corev1.PodLogOptions, sendLine func(string)) (io.ReadCloser, error) {
+	deadline := time.Now().Add(runtimeLogWait)
+	said := false
+	for {
+		stream, err := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)
+		if err == nil {
+			return stream, nil
+		}
+		if time.Now().After(deadline) || !s.containerStarting(ctx, namespace, podName) {
+			return nil, err
+		}
+		if !said {
+			sendLine("The app is starting; what it prints follows once it runs.")
+			said = true
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// containerStarting is a pod whose container has not run yet and is on its
+// way to: scheduled or not, pulling its image, or being created.
+func (s *DeploymentService) containerStarting(ctx context.Context, namespace, podName string) bool {
+	pod, err := s.k8s.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil || pod.DeletionTimestamp != nil {
+		return false
+	}
+	if pod.Status.Phase == corev1.PodPending && len(pod.Status.ContainerStatuses) == 0 {
+		return true
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if w := cs.State.Waiting; w != nil {
+			switch w.Reason {
+			case "ContainerCreating", "PodInitializing", "Pending":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// nodeUnreachable is a log request the API could not carry to the node's
+// kubelet, which is what a worker joined on the wrong address looks like.
+func nodeUnreachable(err error) bool {
+	msg := err.Error()
+	for _, s := range []string{"dial tcp", "i/o timeout", "connection refused", "no route to host", ":10250"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // FetchRuntimeLogs fetches a snapshot of container logs as plain text (no streaming).

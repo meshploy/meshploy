@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { stripAnsi } from "@/lib/log-level"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -358,7 +359,9 @@ function LogsTab() {
 // K8s timestamp prefix: 2026-05-13T10:23:45.123456789Z
 const TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z) ([\s\S]*)$/
 
-function parseLogLine(raw: string): { time: string; text: string } {
+// An app's colours arrive as escape codes, which are not text to show.
+function parseLogLine(line: string): { time: string; text: string } {
+  const raw = stripAnsi(line)
   const m = raw.match(TS_RE)
   if (!m) return { time: "", text: raw }
   const d = new Date(m[1])
