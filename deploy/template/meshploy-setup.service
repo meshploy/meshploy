@@ -1,0 +1,18 @@
+# The setup page on port 9000, gated on the server's setup token. It runs the
+# installation once the customer has given it a domain, and stops by itself
+# when the console is ready.
+[Unit]
+Description=Meshploy setup page
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/meshploy
+ExecStart=/usr/local/bin/meshploy setup serve
+# The installation it runs starts services of its own (k3s, the mesh, the
+# host agent) through systemd; stopping the page must leave them running.
+KillMode=process
+Restart=on-failure
+RestartSec=5
+# Once the page has installed Meshploy, the template's notes come down.
+ExecStopPost=/opt/meshploy/template/firstboot.sh --after-setup

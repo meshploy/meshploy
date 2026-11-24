@@ -1,0 +1,14 @@
+# A server made from the Meshploy template: makes its own setup token and
+# starts the setup page, on every boot until Meshploy is installed.
+[Unit]
+Description=Meshploy template: prepare this server and start setup
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/meshploy/template/firstboot.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

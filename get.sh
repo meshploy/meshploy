@@ -16,6 +16,8 @@
 #     sudo bash -c "$(curl -fsSL URL)" _ --reinstall --wipe-data
 #     sudo bash -c "$(curl -fsSL URL)" _ --uninstall
 #     sudo bash -c "$(curl -fsSL URL)" _ --cli-only   # install/update CLI binary only
+#     sudo bash -c "$(curl -fsSL URL)" _ --template   # prepare a provider's server image:
+#                                                     # setup runs on each server's first boot
 #     sudo bash -c "$(curl -fsSL URL)" _ --edge        # use edge builds from main
 #     sudo bash -c "$(curl -fsSL URL)" _ --dns-mode=ondemand  # self-managed DNS
 #                                                     # (wildcard A record, no NS delegation)
@@ -48,6 +50,7 @@ for arg in "$@"; do
     --reinstall)  MODE="reinstall" ;;
     --wipe-data)  WIPE_DATA=true ;;
     --cli-only)   CLI_ONLY=true ;;
+    --template)   MODE="template" ;;
     --edge)       EDGE=true ;;
     --auto)       AUTO=true ;;
     # A provisioning token and the platform it is for: the whole install in
@@ -222,6 +225,10 @@ cd "$INSTALL_DIR"
 
 # ── Dispatch via CLI ──────────────────────────────────────────────────────────
 case "$MODE" in
+  template)
+    export MESHPLOY_CHANNEL
+    exec bash "${INSTALL_DIR}/template/prepare.sh"
+    ;;
   install|reinstall)
     export MESHPLOY_CHANNEL
     # Built as an array so each flag stays one argument, and so a fresh install
