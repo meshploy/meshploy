@@ -23,7 +23,7 @@ The **Explorer** runs queries against it from the console, and shows its tables.
 
 ## Backups {#backups}
 
-A database is backed up on a schedule to a **storage integration** (S3 or compatible), kept for as many days as you choose. A Postgres, MySQL, MongoDB or ClickHouse backup can be **restored**, over the database it came from. A ClickHouse restore replaces the whole database, and only once the backup has been proved to restore. Redis and Dragonfly are backed up as snapshot files, which Meshploy cannot restore yet.
+A database is backed up on a schedule to a **storage integration** (S3 or compatible), kept for as many days as you choose. Any backup can be **restored**, over the database it came from. A ClickHouse restore replaces the whole database, and only once the backup has been proved to restore. Redis and Dragonfly are backed up as snapshots; restoring one replaces all their data and restarts them, so they are away for a few seconds while it loads. Dragonfly backups taken before Meshploy 0.27.1 hold no data and cannot be restored.
 
 A database with no backups has nothing to restore from if its volume is lost; the workspace overview lists those under Needs attention.
 

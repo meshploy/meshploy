@@ -17,6 +17,7 @@ import (
 	appk8s "github.com/meshploy/packages/server/k8s"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ─── S3 helpers ───────────────────────────────────────────────────────────────
@@ -212,12 +213,20 @@ func dumpCmd(engine db.DatabaseEngine, dbUser, dbName, dbPass string) ([]string,
 		)}, nil
 
 	case db.DatabaseRedis, db.DatabaseDragonfly:
-		if dbPass != "" {
-			return []string{"sh", "-c", fmt.Sprintf(
-				"redis-cli -a '%s' --rdb - 2>/dev/null | gzip", p,
-			)}, nil
+		// The snapshot goes to a file first and is sent only if it is one:
+		// piped straight into gzip, a failed run sent its error text as the
+		// backup and still exited 0. Redis hands a replica its snapshot
+		// (--rdb); Dragonfly has no SYNC for that and saves one in Redis's
+		// format on request instead.
+		snap := redisDataDir + "/meshploy-backup.rdb"
+		take := "redis-cli --rdb '" + snap + "' >/dev/null"
+		if engine == db.DatabaseDragonfly {
+			take = "redis-cli save rdb meshploy-backup >/dev/null"
 		}
-		return []string{"sh", "-c", "redis-cli --rdb - 2>/dev/null | gzip"}, nil
+		return []string{"sh", "-c", fmt.Sprintf(
+			"%[1]srm -f '%[2]s'; %[3]s && [ \"$(head -c 5 '%[2]s')\" = REDIS ] && gzip -c '%[2]s'; rc=$?; rm -f '%[2]s'; exit $rc",
+			redisAuth(dbPass), snap, take,
+		)}, nil
 
 	case db.DatabaseClickHouse:
 		// ClickHouse has no dump tool that keeps its engines, views and
@@ -237,6 +246,45 @@ func dumpCmd(engine db.DatabaseEngine, dbUser, dbName, dbPass string) ([]string,
 	default:
 		return nil, fmt.Errorf("unsupported engine for automated backup: %s", engine)
 	}
+}
+
+// redisAuth signs in every redis-cli a script runs after it: redis-cli reads
+// the password from its environment, so it is not in the process list and
+// draws no warning.
+func redisAuth(pass string) string {
+	if pass == "" {
+		return ""
+	}
+	return "export REDISCLI_AUTH='" + shellEsc(pass) + "'; "
+}
+
+// redisDataDir is where Redis and Dragonfly keep their snapshots: the
+// volume Meshploy mounts, their working directory.
+var redisDataDir = dbDataPath(db.DatabaseRedis)
+
+// redisRestoreScript checks the snapshot read from stdin, puts it where the
+// server loads one from, and stops the server without saving, so its
+// container restarts and loads it. Neither engine loads a snapshot while it
+// runs. The stop is left to a child that outlives the script, so the exec
+// that ran it ends cleanly before the server goes.
+func redisRestoreScript(engine db.DatabaseEngine, pass string) string {
+	f := redisDataDir + "/meshploy-restore.rdb"
+	place := `[ "$(redis-cli config get appendonly | tail -1)" = no ] || { rm -f '` + f + `'; echo "the append-only file is on, and it would be loaded instead of the snapshot" >&2; exit 1; }; ` +
+		// Its own saves would write over the snapshot before the restart.
+		`redis-cli config set save "" >/dev/null && ` +
+		`while redis-cli info persistence | grep -q 'rdb_bgsave_in_progress:1'; do sleep 1; done && ` +
+		`mv '` + f + `' "$(redis-cli config get dir | tail -1)/$(redis-cli config get dbfilename | tail -1)"`
+	if engine == db.DatabaseDragonfly {
+		// Dragonfly loads the newest dump-* snapshot, so the restored one is
+		// the only one left.
+		place = `while redis-cli info persistence | grep -q '^saving:1'; do sleep 1; done && ` +
+			`rm -f '` + redisDataDir + `'/dump-* && ` +
+			`mv '` + f + `' "` + redisDataDir + `/dump-$(date -u +%Y-%m-%dT%H:%M:%S).rdb"`
+	}
+	return redisAuth(pass) +
+		`gunzip > '` + f + `' && [ "$(head -c 5 '` + f + `')" = REDIS ] || { rm -f '` + f + `'; echo "this backup holds no snapshot" >&2; exit 1; }; ` +
+		place + ` || exit 1; ` +
+		`nohup sh -c 'sleep 1; redis-cli shutdown nosave' >/dev/null 2>&1 &`
 }
 
 // clickHouseBackupDir is where ClickHouse's File() backups live: the
@@ -350,6 +398,8 @@ func (s *BackupService) execBackup(ctx context.Context, cfgID uuid.UUID) {
 		ext = ".dump.gz"
 	case db.DatabaseClickHouse:
 		ext = ".zip"
+	case db.DatabaseRedis, db.DatabaseDragonfly:
+		ext = ".rdb.gz"
 	}
 	key := backupKey(cfg.PathPrefix, dc.Slug, time.Now(), ext)
 	if err := uploadToS3(ctx, s3c, cfg.StorageIntegration.Bucket, key, reader); err != nil {
@@ -409,6 +459,8 @@ func restoreCmd(engine db.DatabaseEngine, dbUser, dbName, dbPass string) ([]stri
 			"%s; %s; rc=$?; rm -f '%s'; exit $rc",
 			clickHouseSweep, strings.Join(steps, " && "), path,
 		)}, nil
+	case db.DatabaseRedis, db.DatabaseDragonfly:
+		return []string{"sh", "-c", redisRestoreScript(engine, dbPass)}, nil
 	default:
 		return nil, fmt.Errorf("restore not supported for engine: %s", engine)
 	}
@@ -527,8 +579,59 @@ func (s *BackupService) restoreObject(ctx context.Context, storage db.StorageInt
 		return fmt.Errorf("find pod: %w", err)
 	}
 
-	return appk8s.ExecRestoreCommand(ctx, s.k8s, s.cluster.RestConfig(),
-		target.Project.Slug, podName, dc.Slug, cmd, obj)
+	restarts := s.containerRestarts(ctx, target.Project.Slug, podName, dc.Slug)
+	if err := appk8s.ExecRestoreCommand(ctx, s.k8s, s.cluster.RestConfig(),
+		target.Project.Slug, podName, dc.Slug, cmd, obj); err != nil {
+		return err
+	}
+	if dc.Engine == db.DatabaseRedis || dc.Engine == db.DatabaseDragonfly {
+		return s.awaitRedisReload(ctx, target.Project.Slug, podName, dc.Slug, string(dc.DBPassword), restarts)
+	}
+	return nil
+}
+
+// containerRestarts is how many times a database's container has restarted,
+// or -1 when it cannot be read.
+func (s *BackupService) containerRestarts(ctx context.Context, namespace, podName, container string) int32 {
+	pod, err := s.k8s.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return -1
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == container {
+			return cs.RestartCount
+		}
+	}
+	return -1
+}
+
+// awaitRedisReload waits for a Redis or Dragonfly restore to take: its
+// container restarted after the restore stopped the server, and the server
+// answering again, which it does only once the snapshot is loaded. Until
+// then a restore that reported success could still be serving the old data.
+func (s *BackupService) awaitRedisReload(ctx context.Context, namespace, podName, container, pass string, before int32) error {
+	ping := []string{"sh", "-c", redisAuth(pass) + "redis-cli ping"}
+	deadline := time.Now().Add(3 * time.Minute)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+		if before >= 0 && s.containerRestarts(ctx, namespace, podName, container) <= before {
+			continue
+		}
+		r, err := appk8s.ExecDumpCommand(ctx, s.k8s, s.cluster.RestConfig(), namespace, podName, container, ping)
+		if err != nil {
+			continue
+		}
+		out, err := io.ReadAll(r)
+		r.Close()
+		if err == nil && strings.TrimSpace(string(out)) == "PONG" {
+			return nil
+		}
+	}
+	return fmt.Errorf("the snapshot was put in place, but the database did not come back within 3 minutes")
 }
 
 func (s *BackupService) execSystemRestore(ctx context.Context, cfgID uuid.UUID, key string) error {
