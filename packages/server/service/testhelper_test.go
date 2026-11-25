@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
@@ -39,7 +41,9 @@ func TestMain(m *testing.M) {
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		// Use the existing local Postgres - create isolated DBs per test.
 		pgDSN = dsn
-		os.Exit(m.Run())
+		code := m.Run()
+		dropTestDBs()
+		os.Exit(code)
 		return
 	}
 
@@ -49,6 +53,9 @@ func TestMain(m *testing.M) {
 		tcpostgres.WithUsername("test"),
 		tcpostgres.WithPassword("test"),
 		tcpostgres.WithSQLDriver("pgx"),
+		// Its data in memory: no volume is made, so a run that is killed or
+		// times out leaves nothing behind, and the tests run faster.
+		testcontainers.WithTmpfs(map[string]string{"/var/lib/postgresql/data": "rw"}),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
 		),
@@ -98,6 +105,46 @@ func newTestDB(t *testing.T) *gorm.DB {
 		}
 	})
 	return db
+}
+
+// dropTestDBs removes the run's databases from a shared Postgres
+// (DATABASE_URL), so it does not keep hundreds of them between runs. Once at
+// the end rather than per test: dropping is slow enough to add up. A run that
+// is killed leaves them, and the next run reuses the same names. FORCE ends
+// the connections background loops still hold.
+func dropTestDBs() {
+	root, err := gorm.Open(postgres.Open(pgDSN), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		return
+	}
+	defer func() {
+		if r, _ := root.DB(); r != nil {
+			r.Close()
+		}
+	}()
+	// Several at once: one after another, hundreds of drops took minutes,
+	// counted against the run's timeout.
+	start := time.Now()
+	n := dbSeq.Load()
+	next := make(chan int64)
+	var wg sync.WaitGroup
+	for w := 0; w < 8; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				root.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS meshploy_test_%d WITH (FORCE)", i))
+			}
+		}()
+	}
+	for i := int64(1); i <= n; i++ {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	if testing.Verbose() {
+		fmt.Fprintf(os.Stderr, "dropped %d test databases in %s\n", n, time.Since(start).Round(time.Millisecond))
+	}
 }
 
 // newServices builds a Services aggregate with no K8s client and no config.

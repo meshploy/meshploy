@@ -20,6 +20,9 @@ func TestMigrate(t *testing.T) {
 		tcpostgres.WithUsername("test"),
 		tcpostgres.WithPassword("test"),
 		tcpostgres.WithSQLDriver("pgx"),
+		// Its data in memory: no volume is made, so a run that is killed or
+		// times out leaves nothing behind, and the tests run faster.
+		testcontainers.WithTmpfs(map[string]string{"/var/lib/postgresql/data": "rw"}),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
 		),
