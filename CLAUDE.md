@@ -22,6 +22,7 @@ meshploy/
 │   ├── mcpserver/    # MCP tool definitions (imported by cli for stdio, api for remote /mcp)
 │   ├── proxy/        # The edge proxy's code: route cache, handler, TCP routes (apps/proxy is its one-call main)
 │   ├── license/      # Enterprise licence verification: claims, keys, features
+│   ├── fleet/        # Contract between an install and the account plane it links to: link token, enrolment, signed connection, reports
 │   ├── hostagent/    # Contract between the gateway's host agent (CLI) and the API: reports, firewall parsing, port verdicts
 │   ├── help/         # Meshploy explaining itself: topics/*.md, read by the console's help drawer, the docs' Concepts and (later) MCP
 │   └── server/       # API core — config, service, handler, middleware, k8s (imported by apps/api)
@@ -185,7 +186,7 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (64 CE tables)
+## packages/db — schema (65 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
@@ -201,7 +202,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 | Discovery | `ignored_endpoints` |
 | History | `deployments`, `jobs`, `job_runs` |
 | Integrations | `storage_integrations`, `registry_integrations`, `git_integrations`, `dns_providers` |
-| Operations | `backup_configs`, `system_backup_configs`, `notification_channels`, `notification_deliveries`, `org_email_configs` |
+| Operations | `backup_configs`, `system_backup_configs`, `fleet_links`, `notification_channels`, `notification_deliveries`, `org_email_configs` |
 | Templates | `templates` |
 | Metrics | `node_metric_samples`, `service_metric_samples` |
 

@@ -100,6 +100,7 @@ require (
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-shellwords v1.0.12 // indirect
+	github.com/meshploy/packages/fleet v0.0.0
 	github.com/meshploy/packages/hostagent v0.0.0
 	github.com/meshploy/packages/license v0.0.0
 	github.com/minio/crc64nvme v1.1.1 // indirect
@@ -165,3 +166,5 @@ require (
 replace github.com/meshploy/packages/license => ../license
 
 replace github.com/meshploy/packages/hostagent => ../hostagent
+
+replace github.com/meshploy/packages/fleet => ../fleet

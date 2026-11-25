@@ -54,17 +54,19 @@ type Services struct {
 	DNSProviders    *DNSProviderService
 	Backups         *BackupService
 	System          *SystemService
-	Notifications   *NotificationService
-	EmailConfig     *EmailConfigService
-	VariableGroups  *VariableGroupService
-	Jobs            *JobService
-	Templates       *TemplateService
-	DBExplorer      *DBExplorerService
-	Tickets         *TicketService    // single-use tickets for WebSocket auth
-	Headscale       *HeadscaleService // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
-	Isolation       *IsolationService
-	Sandbox         *SandboxService
-	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
+	// Fleet is the link to an account plane (Meshploy Cloud); idle until enrolled.
+	Fleet          *FleetService
+	Notifications  *NotificationService
+	EmailConfig    *EmailConfigService
+	VariableGroups *VariableGroupService
+	Jobs           *JobService
+	Templates      *TemplateService
+	DBExplorer     *DBExplorerService
+	Tickets        *TicketService    // single-use tickets for WebSocket auth
+	Headscale      *HeadscaleService // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
+	Isolation      *IsolationService
+	Sandbox        *SandboxService
+	K8s            kubernetes.Interface // nil if KUBECONFIG unavailable
 	// Cluster is how the cluster is reached: its connection for exec and
 	// streams, and the host-level pods (builder, image cleanup, node
 	// terminal). Nil exactly when K8s is.
@@ -416,6 +418,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go nodes.StartRemovalWorker(context.Background())
 	go svc.MeshAccess.Follow(context.Background())
 	go svc.Isolation.Start(context.Background())
+	svc.Fleet = NewFleetService(db, svc.Orgs, svc.Domains, svc.System)
+	go svc.Fleet.Start(context.Background())
 	if agent != nil {
 		// What a local cluster gets at startup, an agent's cluster gets each
 		// time its agent is set: at startup if one is registered, and at

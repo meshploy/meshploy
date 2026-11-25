@@ -61,6 +61,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerAccessRuleRoutes(api)
 	h.registerOAuthRoutes(api)
 	h.registerEntitlementRoutes(api)
+	h.registerFleetRoutes(api)
 	h.registerBrandRoutes(api)
 	h.registerTerminalRoutes(api)
 	h.registerMetricsHistoryRoutes(api)

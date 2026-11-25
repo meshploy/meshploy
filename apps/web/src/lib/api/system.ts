@@ -208,6 +208,20 @@ export interface Channels {
   unavailable?: string
 }
 
+/** This server's link to Meshploy Cloud. Read and changed by its owner only. */
+export interface FleetLink {
+  linked: boolean
+  /** Who the server is linked to, as Meshploy Cloud named them. */
+  account?: string
+  connect_url?: string
+  /** The owner's switch: on, the server reports its state; off, nothing is sent. */
+  report: boolean
+  connected: boolean
+  connected_at?: string
+  last_error?: string
+  linked_at?: string
+}
+
 export const system = {
   versionInfo: (token: string) =>
     apiFetch<VersionInfo>("/api/v1/system/version", {}, token),
@@ -266,4 +280,15 @@ export const system = {
 
   channels: (token: string) =>
     apiFetch<Channels>("/api/v1/system/channels", {}, token),
+
+  fleet: (token: string) => apiFetch<FleetLink>("/api/v1/system/fleet", {}, token),
+
+  linkFleet: (linkToken: string, token: string) =>
+    apiFetch<FleetLink>("/api/v1/system/fleet", { method: "POST", body: JSON.stringify({ token: linkToken }) }, token),
+
+  setFleetReport: (report: boolean, token: string) =>
+    apiFetch<FleetLink>("/api/v1/system/fleet", { method: "PATCH", body: JSON.stringify({ report }) }, token),
+
+  unlinkFleet: (token: string) =>
+    apiFetch<void>("/api/v1/system/fleet", { method: "DELETE" }, token),
 }

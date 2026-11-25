@@ -489,6 +489,37 @@ type InstalledLicense struct {
 
 func (InstalledLicense) TableName() string { return "installed_licenses" }
 
+// FleetLink is this install's link to an account plane (Meshploy Cloud, or a
+// fleet console that speaks packages/fleet). At most one row: an install is
+// linked to one account plane at a time. The install dials out over it, so
+// the row holds this install's own key, never a credential of the account
+// plane's.
+type FleetLink struct {
+	Base
+	// ConnectURL is the account plane's connector, from the link token.
+	ConnectURL string `gorm:"not null" json:"connect_url"`
+	// LinkID is the account plane's name for this link.
+	LinkID string `gorm:"not null" json:"link_id"`
+	// Account is who the install is linked to, as the account plane named it.
+	Account string `gorm:"not null;default:''" json:"account"`
+	// PrivateKey is this install's Ed25519 key, base64; the account plane holds
+	// its public half.
+	PrivateKey EncryptedString `gorm:"type:text;not null" json:"-"`
+	// CloudKey is the account plane's Ed25519 public key, base64, pinned at
+	// enrolment.
+	CloudKey string `gorm:"not null" json:"-"`
+	// Report is the owner's switch: while on, the install reports its state.
+	// Off, the link stands and nothing about the install is sent.
+	Report     bool      `gorm:"not null;default:true" json:"report"`
+	EnrolledBy uuid.UUID `gorm:"type:uuid;not null" json:"enrolled_by"`
+	// ConnectedAt is when the connection last came up; LastError why it last
+	// failed, cleared once it is up.
+	ConnectedAt *time.Time `json:"connected_at"`
+	LastError   string     `gorm:"not null;default:''" json:"last_error"`
+}
+
+func (FleetLink) TableName() string { return "fleet_links" }
+
 type TrustedDevice struct {
 	Base
 	UserID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`

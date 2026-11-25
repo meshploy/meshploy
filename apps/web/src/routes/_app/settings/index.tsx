@@ -26,6 +26,7 @@ import { useIsAdmin, useOrgStore } from "@/store/org-store"
 import { Section, inputCls } from "@/components/services/form-primitives"
 import { UpgradeDialog } from "@/components/licence/upgrade-dialog"
 import { ServerSection } from "@/components/system/server-section"
+import { CloudLinkSection } from "@/components/system/cloud-link-section"
 import {
   RegistryLoginHint,
   UpgradeDialog as ServerUpgradeDialog,
@@ -59,6 +60,10 @@ function SettingsPage() {
     enabled: !!orgId,
   })
 
+  // The Cloud link is the server owner's alone; nobody else gets its entry.
+  const { data: upgrade } = useQuery({ queryKey: ["system-upgrade"], queryFn: () => systemApi.upgradeStatus(token) })
+  const serverOwner = upgrade?.owner === true
+
   if (isLoading || !org) {
     return (
       <div className="console-page p-6 flex items-center gap-2 text-muted-foreground text-sm">
@@ -78,7 +83,7 @@ function SettingsPage() {
       <SettingsWorkspace sections={[
         ["general", "General"], ["isolation", "Isolation"], ["appearance", "Appearance"],
         ...(EeSettingsSection ? [[EeSettingsSection.id, EeSettingsSection.label] as [string, string]] : []),
-        ["monitoring", "Monitoring"], ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"],
+        ["monitoring", "Monitoring"], ["backups", "Backups"], ["server", "Server"], ...(serverOwner ? [["cloud", "Meshploy Cloud"] as [string, string]] : []), ["licence", "Licence"],
       ]}>
       <div id="general"><GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} /></div>
 
@@ -96,6 +101,8 @@ function SettingsPage() {
       <div id="server" className="scroll-mt-6">
         <ServerSection />
       </div>
+
+      {serverOwner && <div id="cloud"><CloudLinkSection /></div>}
 
       <div id="licence"><LicenseSection /></div>
       </SettingsWorkspace>

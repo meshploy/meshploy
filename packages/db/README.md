@@ -35,6 +35,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `oauth_codes` | Authorization codes: single use, five minutes, with the redirect URI and PKCE challenge they were issued for |
 | `oauth_tokens` | `moat-` access and `mort-` refresh tokens under a grant, SHA-256 hashed; a refresh token is marked when traded |
 | `installed_licenses` | Enterprise licence tokens activated on this install |
+| `fleet_links` | This install's link to an account plane (Meshploy Cloud): its connector address, its own key, the account plane's key, and the owner's reporting switch. At most one row |
 | `organizations` | Tenancy root. `network_isolation` closes each of its projects to the rest of the cluster; `metric_retention_days` is how long its metrics history is kept (0 is the default, 7) |
 | `organization_members` | User ↔ Org join (roles: owner / admin / member) |
 | `mesh_reach` | Whether a member's machines may reach a granted service, stack or project on the mesh, once someone chose; without a row, databases are off and everything else on |
