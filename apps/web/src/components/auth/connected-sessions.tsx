@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Monitor, PlugZap, Search, TerminalSquare } from "lucide-react"
+import { ArrowUpRight, Loader2, Monitor, PlugZap, Search, TerminalSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -9,7 +9,7 @@ import { Section } from "@/components/services/form-primitives"
 import { CopyValue } from "@/components/domains/dns-records"
 import { OptionSelect } from "@/components/layout/option-select"
 import { SegmentedControl } from "@/components/ui/segmented-control"
-import { system } from "@/lib/api/system"
+import { system, type AgentCall } from "@/lib/api/system"
 import { auth, cliLogins, oauth, type CliSession, type ConsoleSession, type OAuthConnection, type OrgCliSession, type OrgConsoleSession } from "@/lib/api"
 import { formatRelativeTime } from "@/lib/utils"
 import { useAuthStore } from "@/store/auth-store"
@@ -35,6 +35,36 @@ interface Session {
   end?: { label: string; run: () => void; pending: boolean }
   /** Why the viewer cannot end it, when that is worth saying. */
   note?: string
+  /** Said before when it began, when that is not a sign-in. */
+  since?: string
+  /** Where it is ended instead, when that is elsewhere. */
+  manage?: { label: string; href: string }
+}
+
+/**
+ * An agent app reaching here through the person's Meshploy account, as the
+ * calls it made show it: the grant lives in their account, so it is ended
+ * there, and here it is only seen.
+ */
+function cloudApps(calls: AgentCall[], appURL?: string): Session[] {
+  const since = Date.now() - 30 * 86_400_000
+  const byApp = new Map<string, { first: string; last: string }>()
+  for (const c of calls) {
+    if (new Date(c.at).getTime() < since) continue
+    const name = c.app || "An agent app"
+    const seen = byApp.get(name)
+    if (!seen) byApp.set(name, { first: c.at, last: c.at })
+    else {
+      if (c.at < seen.first) seen.first = c.at
+      if (c.at > seen.last) seen.last = c.at
+    }
+  }
+  return [...byApp].map(([name, { first, last }]) => ({
+    kind: "assistant" as const, id: `cloud:${name}`, title: name,
+    detail: "AI assistant · through your Meshploy account, as you",
+    created: first, since: "first seen", lastUsed: last,
+    manage: appURL ? { label: "Manage in Cloud", href: `${appURL}/agent-apps` } : undefined,
+  }))
 }
 
 function fromAssistant(c: OAuthConnection, view: "self" | "member" | "agent" | "org"): Session {
@@ -126,12 +156,19 @@ function SessionList({ sessions, empty }: { sessions: Session[]; empty: React.Re
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{s.title}</p>
             <p className="text-xs text-muted-foreground">
-              {s.detail} · signed in {formatRelativeTime(new Date(s.created))}
+              {s.detail} · {s.since ?? "signed in"} {formatRelativeTime(new Date(s.created))}
               {s.lastUsed && <> · last used {formatRelativeTime(new Date(s.lastUsed))}</>}
               {s.ended && <> · disconnected {formatRelativeTime(new Date(s.ended))}</>}
             </p>
           </div>
           {!s.ended && !s.end && s.note && <span className="max-w-[12rem] text-right text-[11px] text-muted-foreground/70">{s.note}</span>}
+          {!s.ended && s.manage && (
+            <a href={s.manage.href} target="_blank" rel="noreferrer"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-3 text-xs hover:bg-muted/40">
+              {s.manage.label}
+              <ArrowUpRight className="h-3 w-3" />
+            </a>
+          )}
           {!s.ended && s.end && (
             <Button variant="outline" size="sm" className="h-7 px-3 text-xs" disabled={s.end.pending} onClick={() => setAsking(s)}>
               {s.end.pending && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -358,6 +395,11 @@ export function MySessions() {
   const qc = useQueryClient()
   const clis = useQuery({ queryKey: ["cli-sessions"], queryFn: () => cliLogins.sessions(token) })
   const assistants = useQuery({ queryKey: ["oauth-connections", orgId, "self"], queryFn: () => oauth.connections(orgId!, token), enabled: !!orgId })
+  // Agent apps reaching here through Meshploy Cloud, once the person's
+  // account reaches this server: linked to it, or a server Cloud runs.
+  const account = useQuery({ queryKey: ["my-meshploy-account"], queryFn: () => system.myMeshployAccount(token) })
+  const throughCloud = !!account.data?.available && (!!account.data.linked || !!account.data.managed)
+  const calls = useQuery({ queryKey: ["my-agent-calls"], queryFn: () => system.myAgentCalls(token), enabled: throughCloud, refetchInterval: 30_000 })
   const disconnect = useDisconnect(orgId ?? "", token)
   const logOut = useMutation({
     mutationFn: (id: string) => cliLogins.revoke(id, token),
@@ -366,6 +408,7 @@ export function MySessions() {
   const sessions = [
     ...(clis.data ?? []).map((s) => ({ ...fromCli(s, "self"), end: { label: "Sign out", run: () => logOut.mutate(s.id), pending: logOut.isPending && logOut.variables === s.id } })),
     ...(assistants.data ?? []).map((c) => withDisconnect(fromAssistant(c, "self"), disconnect)),
+    ...(throughCloud ? cloudApps(calls.data?.calls ?? [], account.data?.app_url) : []),
   ]
   const error = logOut.error ?? disconnect.error
   return (
