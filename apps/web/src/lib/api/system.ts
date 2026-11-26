@@ -224,6 +224,8 @@ export interface FleetLink {
   agent_apps: boolean
   /** How many people here linked their Meshploy accounts. */
   people: number
+  /** Meshploy Cloud runs this server: its people reach it through their accounts without linking them. */
+  managed?: boolean
 }
 
 /** A person's own Meshploy account on this server. */
@@ -235,6 +237,8 @@ export interface MyMeshployAccount {
   email?: string
   linked_at?: string
   app_url?: string
+  /** People here reach it through their Meshploy accounts without linking them. */
+  managed?: boolean
 }
 
 /** One call an agent app made here, acting as you. */

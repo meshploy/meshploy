@@ -117,6 +117,11 @@ type EnrollResponse struct {
 	// AppURL is the account plane's web address, where a person approves
 	// agent apps acting as them (https://app.meshploy.com).
 	AppURL string `json:"app_url,omitempty"`
+	// Managed: the account plane runs this install for its people, as it
+	// does a Meshploy Cloud workspace, and its people sign in through it. A
+	// call then names its person by their verified email, and the install
+	// acts as its own user with that email; no one links an account.
+	Managed bool `json:"managed,omitempty"`
 }
 
 // About describes an install. Sent at enrolment and with every report.
@@ -239,6 +244,9 @@ type Call struct {
 	ID string `json:"id"`
 	// Account is the account plane's id of the account the app acts for.
 	Account string `json:"account"`
+	// Email is the account's verified address, sent to a managed install
+	// only, which acts as its user with that address.
+	Email string `json:"email,omitempty"`
 	// App names the agent app, as the person approved it ("Claude").
 	App    string `json:"app"`
 	Method string `json:"method"`
@@ -253,12 +261,17 @@ type Call struct {
 // CallTTL is how long a call may take to arrive.
 const CallTTL = time.Minute
 
-// CallString is what the account plane signs on a call.
+// CallString is what the account plane signs on a call. The email is
+// signed when there is one, so a call without it reads as it always has.
 func CallString(linkID string, c Call) []byte {
 	sum := sha256.Sum256(c.Body)
-	return []byte("meshploy-fleet-call\n" + linkID + "\n" + c.ID + "\n" + c.Account + "\n" + c.App + "\n" +
+	s := "meshploy-fleet-call\n" + linkID + "\n" + c.ID + "\n" + c.Account + "\n" + c.App + "\n" +
 		c.Method + "\n" + c.Path + "\n" + c.ContentType + "\n" + hex.EncodeToString(sum[:]) + "\n" +
-		strconv.FormatInt(c.Expires.Unix(), 10))
+		strconv.FormatInt(c.Expires.Unix(), 10)
+	if c.Email != "" {
+		s += "\nemail:" + c.Email
+	}
+	return []byte(s)
 }
 
 // SignCall signs a call for linkID.
@@ -299,6 +312,9 @@ type Report struct {
 	Backups BackupCounts `json:"backups"`
 	// UpdateAvailable is the newest release, when it is newer than Version.
 	UpdateAvailable string `json:"update_available,omitempty"`
+	// Members are the addresses of the people who sign in here, sent by a
+	// managed install only: who the account plane's agent apps reach it for.
+	Members []string `json:"members,omitempty"`
 }
 
 // Count is n of total.

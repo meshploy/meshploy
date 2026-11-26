@@ -421,6 +421,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	svc.Fleet = NewFleetService(db, svc.Orgs, svc.Domains, svc.System)
 	if c != nil {
 		svc.Fleet.RunCallsAs(svc.Auth, c.JWTSecret, c.APIPort)
+		svc.Fleet.EnrolWith(c.FleetToken)
 	}
 	go svc.Fleet.Start(context.Background())
 	if agent != nil {

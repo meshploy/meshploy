@@ -175,6 +175,7 @@ Required in `.env` at the monorepo root:
 | `TEMPLATE_REFRESH_INTERVAL` | How often the in-memory catalog cache refreshes (Go duration, default: `1h`) |
 | `SETUP_TOKEN` | Gates the first registration; set by `install.sh`. Empty disables the check |
 | `SIGN_IN_LINK_KEY` | Lets whoever holds it make one-time links that sign a person in to the console without their password or second factor (`SignInLinkService`, the console's `/link`): an operator opening a console for someone, as Cloud's Open does for a workspace. Empty (the default) turns them off |
+| `FLEET_TOKEN` | A link token (`mflt-`) the install redeems by itself at start while it is not linked: how an operator that runs installs for people (Meshploy Cloud) links each as it is made. The account plane answers a link it made this way as **managed**: agent apps are on from enrolment, its reports name the addresses of the people in its organisations, and a call names its person by verified email, run as the user here with that address, with no one linking an account |
 | `API_BASE_URL` | Public base URL of the API (default: `http://localhost:4000`) |
 | `FRONTEND_URL` | Console URL (default: `http://localhost:5173`) |
 | `HEADSCALE_USER` | Headscale user pre-auth keys are created under (default: `meshploy`) |

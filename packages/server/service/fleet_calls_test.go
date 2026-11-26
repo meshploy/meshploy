@@ -209,3 +209,68 @@ func TestTurningAgentAppsOnLinksTheServersLinker(t *testing.T) {
 	me, _ := svc.Fleet.MyAccount(ctx, other.ID)
 	require.False(t, me.Linked)
 }
+
+// A managed install (a Cloud workspace) links itself with FLEET_TOKEN at
+// start, has agent apps on, reports who signs in there, and runs a call as
+// the person with the account's signed address, with no one linking.
+func TestAManagedInstallLinksItselfAndActsAsThePersonByEmail(t *testing.T) {
+	gdb := newTestDB(t)
+	svc := newServices(gdb)
+	plane := newFakePlane(t)
+	plane.managed = true
+	ctx := context.Background()
+
+	org := meshdb.Organization{Name: "Acme", Slug: "acme-" + uuid.NewString()[:8]}
+	require.NoError(t, gdb.Create(&org).Error)
+	person := meshdb.User{Email: "Asha@Example.com", Username: "asha-" + uuid.NewString()[:8]}
+	stranger := meshdb.User{Email: "nobody-" + uuid.NewString()[:8] + "@example.com", Username: "nobody-" + uuid.NewString()[:8]}
+	require.NoError(t, gdb.Create(&person).Error)
+	require.NoError(t, gdb.Create(&stranger).Error)
+	require.NoError(t, gdb.Create(&meshdb.OrganizationMember{OrganizationID: org.ID, UserID: person.ID, Role: meshdb.RoleMember}).Error)
+	const secret = "jwt-test-secret"
+	port, seen := fakeAPI(t, secret)
+	svc.Fleet.RunCallsAs(svc.Auth, secret, port)
+	svc.Fleet.EnrolWith(plane.token(plane.secret))
+
+	runCtx, stop := context.WithCancel(ctx)
+	t.Cleanup(stop)
+	go svc.Fleet.Start(runCtx)
+	var report *fleet.Report
+	for report == nil {
+		if m := plane.next(t); m.Type == fleet.TypeReport {
+			report = m.Report
+		}
+	}
+	require.Equal(t, []string{"Asha@Example.com"}, report.Members, "only people in an organisation are reported")
+	st, err := svc.Fleet.Status(ctx)
+	require.NoError(t, err)
+	require.True(t, st.Managed)
+	require.True(t, st.AgentApps)
+
+	n := 0
+	call := func(email string) fleet.Result {
+		t.Helper()
+		n++
+		c := fleet.Call{ID: "m-" + strconv.Itoa(n), Account: "acc-" + strconv.Itoa(n), Email: email, App: "Claude",
+			Method: "GET", Path: "/api/v1/orgs", Expires: time.Now().Add(30 * time.Second)}
+		fleet.SignCall("lnk_1", &c, plane.key)
+		plane.mu.Lock()
+		require.NoError(t, plane.conn.WriteJSON(fleet.Message{Type: fleet.TypeCall, Call: &c}))
+		plane.mu.Unlock()
+		for {
+			m := plane.next(t)
+			if m.Type == fleet.TypeResult && m.Result != nil && m.Result.ID == c.ID {
+				return *m.Result
+			}
+		}
+	}
+	r := call("asha@example.com")
+	require.Equal(t, http.StatusOK, r.Status)
+	var answer map[string]string
+	require.NoError(t, json.Unmarshal(r.Body, &answer))
+	require.Equal(t, person.ID.String(), answer["uid"])
+
+	require.Equal(t, http.StatusForbidden, call("someone-else@example.com").Status)
+	require.Equal(t, http.StatusForbidden, call("").Status)
+	require.Len(t, seen(), 1)
+}

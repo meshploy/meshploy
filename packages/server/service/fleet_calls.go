@@ -170,6 +170,9 @@ type MyAccount struct {
 	LinkedAt  *time.Time `json:"linked_at,omitempty"`
 	// AppURL is where the person manages their agent apps.
 	AppURL string `json:"app_url,omitempty"`
+	// Managed: people here reach it through their Meshploy accounts without
+	// linking them.
+	Managed bool `json:"managed,omitempty"`
 }
 
 func (s *FleetService) MyAccount(ctx context.Context, userID uuid.UUID) (*MyAccount, error) {
@@ -181,7 +184,7 @@ func (s *FleetService) MyAccount(ctx context.Context, userID uuid.UUID) (*MyAcco
 	if l == nil {
 		return out, nil
 	}
-	out.ServerLinked, out.Available, out.AppURL = true, l.AgentApps, appURLFor(l)
+	out.ServerLinked, out.Available, out.AppURL, out.Managed = true, l.AgentApps, appURLFor(l), l.Managed
 	var p db.FleetPerson
 	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).First(&p).Error; err == nil {
 		at := p.CreatedAt
@@ -290,13 +293,17 @@ func (s *FleetService) runCall(ctx context.Context, l *db.FleetLink, c fleet.Cal
 	if !s.firstSeen(c.ID, c.Expires) {
 		return refuse(http.StatusConflict, "this call was run already", nil)
 	}
+	var cur db.FleetLink
+	if err := s.db.WithContext(ctx).Where("id = ?", l.ID).First(&cur).Error; err != nil {
+		return refuse(http.StatusForbidden, ErrAgentAppsOff.Error(), nil)
+	}
 	// The person first, so even a refusal lands on their record.
-	var p db.FleetPerson
-	if err := s.db.WithContext(ctx).Where("account = ?", c.Account).First(&p).Error; err != nil {
+	userID, ok := s.callPerson(ctx, &cur, c)
+	if !ok {
 		return refuse(http.StatusForbidden, "no one here has linked this Meshploy account", nil)
 	}
-	var cur db.FleetLink
-	if err := s.db.WithContext(ctx).Where("id = ?", l.ID).First(&cur).Error; err != nil || !cur.AgentApps {
+	p := db.FleetPerson{UserID: userID}
+	if !cur.AgentApps {
 		return refuse(http.StatusForbidden, ErrAgentAppsOff.Error(), &p.UserID)
 	}
 	if !callPathAllowed(c.Method, c.Path) {
@@ -329,6 +336,24 @@ func (s *FleetService) runCall(ctx context.Context, l *db.FleetLink, c fleet.Cal
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, fleetCallLimit))
 	s.recordCall(ctx, c, &p.UserID, resp.StatusCode, "")
 	return fleet.Result{ID: c.ID, Status: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Body: body}
+}
+
+// callPerson is who here a call acts as: the person who linked its account
+// or, on a managed install, the person who signs in with the account's
+// address, the account plane being where people here sign in.
+func (s *FleetService) callPerson(ctx context.Context, l *db.FleetLink, c fleet.Call) (uuid.UUID, bool) {
+	var p db.FleetPerson
+	if err := s.db.WithContext(ctx).Where("account = ?", c.Account).First(&p).Error; err == nil {
+		return p.UserID, true
+	}
+	if !l.Managed || c.Email == "" {
+		return uuid.Nil, false
+	}
+	var u db.User
+	if err := s.db.WithContext(ctx).Where("kind = ? AND email <> '' AND LOWER(email) = LOWER(?)", db.UserHuman, c.Email).First(&u).Error; err != nil {
+		return uuid.Nil, false
+	}
+	return u.ID, true
 }
 
 // appLabel is how an app's sign-in shows on a person's list.

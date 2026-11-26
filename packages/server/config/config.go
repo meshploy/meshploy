@@ -103,6 +103,11 @@ type Config struct {
 	// password does. Empty (the default) turns the links off.
 	SignInLinkKey string // SIGN_IN_LINK_KEY
 
+	// FleetToken is a link token (mflt-) the install redeems by itself at
+	// start while it is not linked: how an operator that runs installs for
+	// people, as Meshploy Cloud does, links each one as it is made.
+	FleetToken string // FLEET_TOKEN
+
 	// Built-in registry - set when docker-compose includes the registry:2 service.
 	// Format: <host>:<port>, e.g. "100.64.0.1:5000" (mesh IP of gateway).
 	// When set, a registry_integrations row is auto-seeded for every org on startup.
@@ -165,6 +170,7 @@ func Load() (*Config, error) {
 		}(),
 		SetupToken:    os.Getenv("SETUP_TOKEN"),
 		SignInLinkKey: os.Getenv("SIGN_IN_LINK_KEY"),
+		FleetToken:    os.Getenv("FLEET_TOKEN"),
 		JWTSecret:     require("JWT_SECRET"),
 		EncryptionKey: require("ENCRYPTION_KEY"),
 

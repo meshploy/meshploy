@@ -65,6 +65,7 @@ func TestCallSignature(t *testing.T) {
 		"path":    func(c *Call) { c.Path = "/api/v1/nodes" },
 		"account": func(c *Call) { c.Account = "other" },
 		"app":     func(c *Call) { c.App = "Cursor" },
+		"email":   func(c *Call) { c.Email = "someone@example.com" },
 	} {
 		d := c
 		change(&d)
@@ -77,6 +78,20 @@ func TestCallSignature(t *testing.T) {
 	}
 	if VerifyCall("lnk", c, pub, now.Add(time.Minute)) == nil {
 		t.Error("an expired call verifies")
+	}
+	// A managed install's call names its person by email, which is signed.
+	m := c
+	m.Email = "ada@example.com"
+	SignCall("lnk", &m, priv)
+	if err := VerifyCall("lnk", m, pub, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, other := range []string{"eve@example.com", ""} {
+		d := m
+		d.Email = other
+		if VerifyCall("lnk", d, pub, now) == nil {
+			t.Errorf("a call for ada verifies with the email %q", other)
+		}
 	}
 	far := Call{ID: "c2", Expires: now.Add(time.Hour)}
 	SignCall("lnk", &far, priv)

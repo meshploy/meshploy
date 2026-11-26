@@ -523,6 +523,10 @@ type FleetLink struct {
 	// linked their account lets the agent apps they approved there act as
 	// them, through the account plane. Off by default.
 	AgentApps bool `gorm:"not null;default:false" json:"agent_apps"`
+	// Managed: the account plane runs this install for its people (a Meshploy
+	// Cloud workspace). Its calls name their person by verified email, and
+	// agent apps are on from enrolment.
+	Managed bool `gorm:"not null;default:false" json:"managed"`
 }
 
 func (FleetLink) TableName() string { return "fleet_links" }

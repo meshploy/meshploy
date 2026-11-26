@@ -30,6 +30,8 @@ type fakePlane struct {
 	installKey ed25519.PublicKey
 	conn       *websocket.Conn
 	unlinked   bool
+	// managed links are answered as a Cloud workspace's: managed.
+	managed bool
 
 	messages chan fleet.Message
 }
@@ -50,11 +52,13 @@ func newFakePlane(t *testing.T) *fakePlane {
 		k, _ := base64.StdEncoding.DecodeString(req.PublicKey)
 		p.mu.Lock()
 		p.installKey = ed25519.PublicKey(k)
+		managed := p.managed
 		p.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(fleet.EnrollResponse{
 			LinkID:    "lnk_1",
 			PublicKey: base64.StdEncoding.EncodeToString(priv.Public().(ed25519.PublicKey)),
 			Account:   "owner@example.com",
+			Managed:   managed,
 		})
 	})
 	verify := func(r *http.Request) bool {

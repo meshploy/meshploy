@@ -63,6 +63,8 @@ type FleetService struct {
 	// tokens holds a console session per person and app, reused while it
 	// lasts, so each app shows as one sign-in on the person's list.
 	tokens map[string]appToken
+	// enrolToken is redeemed at start while the install is not linked.
+	enrolToken string
 }
 
 const (
@@ -99,6 +101,10 @@ func NewFleetService(database *gorm.DB, orgs *OrgService, domains *DomainService
 	}
 }
 
+// EnrolWith has the install redeem token by itself while it is not linked:
+// an operator that makes installs for people links each one this way.
+func (s *FleetService) EnrolWith(token string) { s.enrolToken = token }
+
 // RunCallsAs lets the service run agent apps' calls: it signs in as a person
 // with the API's JWT secret and calls the API on its own port. Without it,
 // calls are refused.
@@ -120,6 +126,9 @@ type FleetStatus struct {
 	AgentApps bool `json:"agent_apps"`
 	// People is how many people here linked their accounts.
 	People int `json:"people"`
+	// Managed: the account plane runs this server for its people, who reach
+	// it through their accounts without linking them.
+	Managed bool `json:"managed"`
 }
 
 func (s *FleetService) link(ctx context.Context) (*db.FleetLink, error) {
@@ -151,7 +160,7 @@ func (s *FleetService) Status(ctx context.Context) (*FleetStatus, error) {
 	return &FleetStatus{
 		Linked: true, Account: l.Account, ConnectURL: l.ConnectURL, Report: l.Report,
 		Connected: up, ConnectedAt: l.ConnectedAt, LastError: l.LastError, LinkedAt: &created,
-		AgentApps: l.AgentApps, People: int(people),
+		AgentApps: l.AgentApps, People: int(people), Managed: l.Managed,
 	}, nil
 }
 
@@ -201,6 +210,7 @@ func (s *FleetService) Enroll(ctx context.Context, token string, userID uuid.UUI
 		ConnectURL: t.URL, LinkID: out.LinkID, Account: out.Account, AppURL: out.AppURL,
 		PrivateKey: db.EncryptedString(base64.StdEncoding.EncodeToString(priv)),
 		CloudKey:   out.PublicKey, Report: true, EnrolledBy: userID,
+		Managed: out.Managed, AgentApps: out.Managed,
 	}
 	if err := s.db.WithContext(ctx).Create(&l).Error; err != nil {
 		return nil, err
@@ -303,6 +313,13 @@ func (s *FleetService) Start(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
 		l, err := s.link(ctx)
+		if err == nil && l == nil && s.enrolToken != "" {
+			if _, err := s.Enroll(ctx, s.enrolToken, uuid.Nil); err != nil {
+				log.Printf("fleet: linking with FLEET_TOKEN: %v", err)
+			} else {
+				continue
+			}
+		}
 		if err != nil || l == nil {
 			// Not linked: wait to be enrolled.
 			select {
@@ -419,6 +436,9 @@ func (s *FleetService) session(ctx context.Context, l *db.FleetLink) error {
 		m := fleet.Message{Type: fleet.TypePaused}
 		if cur.Report {
 			r := s.Report(ctx)
+			if cur.Managed {
+				r.Members = s.members(ctx)
+			}
 			m = fleet.Message{Type: fleet.TypeReport, Report: &r}
 		}
 		return write(m)
@@ -504,6 +524,16 @@ func (s *FleetService) about(ctx context.Context) fleet.About {
 		a.ConsoleURL = s.domains.PlatformURL(ctx, org.ID, "console")
 	}
 	return a
+}
+
+// members are the addresses of the people who sign in here, for a managed
+// install's report.
+func (s *FleetService) members(ctx context.Context) []string {
+	var out []string
+	s.db.WithContext(ctx).Model(&db.User{}).
+		Where("kind = ? AND email <> '' AND id IN (?)", db.UserHuman, s.db.Model(&db.OrganizationMember{}).Select("user_id")).
+		Order("email").Pluck("email", &out)
+	return out
 }
 
 // Report is the install's state as the account plane sees it.

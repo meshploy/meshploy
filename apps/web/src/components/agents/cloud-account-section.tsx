@@ -23,7 +23,9 @@ export function CloudAccountSection() {
     // The owner is linked a moment after turning agent apps on.
     refetchInterval: (q) => (q.state.data?.available && !q.state.data.linked ? 5_000 : false),
   })
-  if (!me.data?.server_linked || !me.data.available) return null
+  // On a server Meshploy Cloud runs, people reach it through their accounts
+  // already, so there is nothing to link.
+  if (!me.data?.server_linked || !me.data.available || me.data.managed) return null
   const d = me.data
   return (
     <Section
