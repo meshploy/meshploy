@@ -3,7 +3,6 @@ import { ResourcePanel, ResourceIntro, StatusPill } from "@/components/layout/re
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
-  Activity,
   Cpu,
   HardDrive,
   MemoryStick,
@@ -260,21 +259,6 @@ function NodeDetailPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => openTab({
-              id: `metrics-${node.id}`,
-              type: "metrics",
-              label: `${node.name} · Metrics`,
-              payload: { nodeId: node.id, nodeLabel: node.name },
-            })}
-          >
-            <Activity className="h-3.5 w-3.5" />
-            Metrics
-          </Button>
-
           {isAdmin && node.k3sRole !== "server" && (
             <>
               {node.meshRole !== "mesh" && (

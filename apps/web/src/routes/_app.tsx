@@ -7,10 +7,9 @@ import { TabBar } from "@/components/layout/tab-bar"
 import { DBExplorer } from "@/components/explorer/db-explorer"
 import { NodeTerminal } from "@/components/terminal/node-terminal"
 import { ServiceTerminal } from "@/components/terminal/service-terminal"
-import { NodeMetricsTab } from "@/components/metrics/node-metrics-tab"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload, type MetricsPayload, type ServiceTerminalPayload } from "@/store/tab-store"
+import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload, type ServiceTerminalPayload } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { orgs as orgsApi, auth } from "@/lib/api"
@@ -113,10 +112,6 @@ function SessionContent({ tab }: { tab: SessionTab }) {
   if (tab.type === "terminal") {
     const payload = tab.payload as TerminalPayload
     return <NodeTerminal payload={payload} />
-  }
-  if (tab.type === "metrics") {
-    const payload = tab.payload as MetricsPayload
-    return <NodeMetricsTab payload={payload} />
   }
   if (tab.type === "service-terminal") {
     const payload = tab.payload as ServiceTerminalPayload
