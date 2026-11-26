@@ -614,8 +614,12 @@ Verifying a domain, changing its DNS mode or removing one records the new domain
 | GET | `/system/version` | ✓ | Get current and latest platform version |
 | GET | `/system/fleet` | ✓ | This server's link to Meshploy Cloud (server owner) |
 | POST | `/system/fleet` | ✓ | Link this server with an `mflt-` link token (server owner) |
-| PATCH | `/system/fleet` | ✓ | Turn reporting to Meshploy Cloud on or off (server owner) |
+| PATCH | `/system/fleet` | ✓ | Turn reporting, or agent apps through Meshploy accounts, on or off (server owner) |
 | DELETE | `/system/fleet` | ✓ | Unlink this server from Meshploy Cloud (server owner) |
+| GET | `/me/meshploy-account` | ✓ | Whether your Meshploy account may act as you here |
+| POST | `/me/meshploy-account` | ✓ | Start linking your Meshploy account: returns where to approve it |
+| DELETE | `/me/meshploy-account` | ✓ | Stop agent apps acting as you here |
+| GET | `/me/meshploy-account/calls` | ✓ | What agent apps did here acting as you |
 | GET | `/system/migrate/dokploy` | ✓ | Instance owner: the host agent's latest Dokploy detection and plan, and the state of each request |
 | POST | `/system/migrate/dokploy/{kind}` | ✓ | Instance owner: run a stage of the migration. `detect` and `plan` are read-only on the host. `credential` mints the migration agent's token and leaves it in the inbox for the agent to take once. `prepare` is stage 1 - the Meshploy side, services stopped and routes paused, Dokploy untouched. `move` is stage 2 for one group (body: `group`) and is the first kind that stops anything. `cutover` is stage 3, handing over ports 80 and 443; with `edge_first` it runs before every group has moved, and the old edge keeps serving them from a side port. `rollback` undoes one group, or everything when no group is given; 409 when the agent is not reporting |
 | GET | `/system/host-agent` | ✓ | Whether the gateway's host agent is reporting, its version and the firewall it found |

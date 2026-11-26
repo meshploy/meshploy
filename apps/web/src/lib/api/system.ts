@@ -220,6 +220,32 @@ export interface FleetLink {
   connected_at?: string
   last_error?: string
   linked_at?: string
+  /** The owner's switch: agent apps may act, through Meshploy Cloud, as people here who linked their accounts. */
+  agent_apps: boolean
+  /** How many people here linked their Meshploy accounts. */
+  people: number
+}
+
+/** A person's own Meshploy account on this server. */
+export interface MyMeshployAccount {
+  server_linked: boolean
+  /** The server's owner allows agent apps. */
+  available: boolean
+  linked: boolean
+  email?: string
+  linked_at?: string
+  app_url?: string
+}
+
+/** One call an agent app made here, acting as you. */
+export interface AgentCall {
+  id: string
+  at: string
+  app: string
+  method: string
+  path: string
+  status: number
+  refused?: string
 }
 
 export const system = {
@@ -288,6 +314,20 @@ export const system = {
 
   setFleetReport: (report: boolean, token: string) =>
     apiFetch<FleetLink>("/api/v1/system/fleet", { method: "PATCH", body: JSON.stringify({ report }) }, token),
+
+  setFleetAgentApps: (agentApps: boolean, token: string) =>
+    apiFetch<FleetLink>("/api/v1/system/fleet", { method: "PATCH", body: JSON.stringify({ agent_apps: agentApps }) }, token),
+
+  myMeshployAccount: (token: string) => apiFetch<MyMeshployAccount>("/api/v1/me/meshploy-account", {}, token),
+
+  linkMyMeshployAccount: (token: string) =>
+    apiFetch<{ url: string }>("/api/v1/me/meshploy-account", { method: "POST" }, token),
+
+  unlinkMyMeshployAccount: (token: string) =>
+    apiFetch<void>("/api/v1/me/meshploy-account", { method: "DELETE" }, token),
+
+  myAgentCalls: (token: string) =>
+    apiFetch<{ calls: AgentCall[] }>("/api/v1/me/meshploy-account/calls", {}, token),
 
   unlinkFleet: (token: string) =>
     apiFetch<void>("/api/v1/system/fleet", { method: "DELETE" }, token),

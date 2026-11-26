@@ -419,6 +419,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go svc.MeshAccess.Follow(context.Background())
 	go svc.Isolation.Start(context.Background())
 	svc.Fleet = NewFleetService(db, svc.Orgs, svc.Domains, svc.System)
+	if c != nil {
+		svc.Fleet.RunCallsAs(svc.Auth, c.JWTSecret, c.APIPort)
+	}
 	go svc.Fleet.Start(context.Background())
 	if agent != nil {
 		// What a local cluster gets at startup, an agent's cluster gets each

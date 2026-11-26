@@ -116,6 +116,18 @@ function Linked({ link }: { link: FleetLink }) {
     },
     onError: (e) => setError(errorText(e, "Could not change reporting.")),
   })
+  const agentApps = useMutation({
+    mutationFn: (on: boolean) => systemApi.setFleetAgentApps(on, token),
+    onSuccess: (data) => {
+      qc.setQueryData(["system-fleet"], data)
+      // Turning it on links you as well, a moment later, through the account
+      // plane; the counts follow.
+      qc.invalidateQueries({ queryKey: ["my-meshploy-account"] })
+      if (data.agent_apps) setTimeout(() => qc.invalidateQueries({ queryKey: ["system-fleet"] }), 2_000)
+      setError(null)
+    },
+    onError: (e) => setError(errorText(e, "Could not change agent apps.")),
+  })
   const unlink = useMutation({
     mutationFn: () => systemApi.unlinkFleet(token),
     onSuccess: () => {
@@ -168,6 +180,27 @@ function Linked({ link }: { link: FleetLink }) {
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           ) : (
             <Switch id="fleet-report" checked={link.report} onCheckedChange={(on) => report.mutate(on)} />
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-start justify-between gap-4 border-t border-border/60 pt-4">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="fleet-agent-apps" className="text-sm font-medium">Allow agent apps through Meshploy accounts</label>
+            <TermInfo id="cloud-link.agent-apps" />
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {link.agent_apps
+              ? `On. The agent apps you approved in your Meshploy account act as you here. Others here link their own account on the Connectors page, and theirs act as them, with exactly their permissions. ${link.people === 1 ? "1 person has" : `${link.people} people have`} linked.`
+              : "Off. Claude, Cursor and other agent apps cannot reach this server through Meshploy Cloud. Turned on, yours can act as you here at once, and others here may link their own."}
+          </p>
+        </div>
+        <div className="shrink-0 pt-0.5">
+          {agentApps.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : (
+            <Switch id="fleet-agent-apps" checked={link.agent_apps} onCheckedChange={(on) => agentApps.mutate(on)} />
           )}
         </div>
       </div>

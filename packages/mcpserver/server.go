@@ -10,6 +10,32 @@ import (
 	"github.com/meshploy/packages/client"
 )
 
+// RemoteExcluded are stripped from every MCP surface a remote agent reaches:
+// the gateway's /mcp, and Meshploy Cloud's for a linked server. They are
+// operator, privilege-escalation or personal-data tools that must never be
+// reachable by a remote agent whatever its person may do:
+//   - node registration token = mesh + k3s enrolment credential
+//   - system backups = instance-wide operations
+//   - member/permission/invitation enumeration = discloses the org's humans
+//   - db_query / db_schema = live exec-into-pod surface (RCE-adjacent)
+//   - deploy_folder = reads a folder from the disk the server runs on: the
+//     agent's own for meshploy mcp, the server's here
+//
+// The local stdio server (meshploy mcp) keeps the full surface: it runs under
+// a developer's own login on their own machine, a different trust model.
+var RemoteExcluded = []string{
+	"get_node_registration_token",
+	"get_system_backup",
+	"list_system_backup_objects",
+	"list_resource_permissions",
+	"list_member_permissions",
+	"list_org_members",
+	"list_invitations",
+	"db_query",
+	"db_schema",
+	"deploy_folder",
+}
+
 type srv struct {
 	c     *client.Client
 	orgID string

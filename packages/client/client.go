@@ -25,6 +25,12 @@ func (c *Client) SetHeader(key, value string) {
 	c.headers[key] = value
 }
 
+// SetTransport sends the client's requests through rt instead of the network:
+// Meshploy Cloud carries them to a linked server over its connection.
+func (c *Client) SetTransport(rt http.RoundTripper) {
+	c.httpClient.Transport = rt
+}
+
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,

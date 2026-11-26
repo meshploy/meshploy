@@ -12,7 +12,9 @@ package fleet
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,6 +114,9 @@ type EnrollResponse struct {
 	// Account names who the install is now linked to, for the install's
 	// owner to see ("Linked to ada@example.com").
 	Account string `json:"account"`
+	// AppURL is the account plane's web address, where a person approves
+	// agent apps acting as them (https://app.meshploy.com).
+	AppURL string `json:"app_url,omitempty"`
 }
 
 // About describes an install. Sent at enrolment and with every report.
@@ -166,12 +171,119 @@ const (
 	// TypeUnlinked goes from the account plane when the link was removed
 	// there; the install forgets the link.
 	TypeUnlinked = "unlinked"
+
+	// TypePersonLinked goes from the account plane when a person approved
+	// agent apps acting as them on this install; it carries the install's
+	// one-time code back, signed.
+	TypePersonLinked = "person_linked"
+	// TypePersonUnlinked goes either way: the account plane when the person
+	// withdrew it there, the install when they withdrew it on the install.
+	TypePersonUnlinked = "person_unlinked"
+	// TypeLinkOwner goes from the install when the person who linked it turned
+	// agent apps on: it carries a one-time code, and the account plane answers
+	// with person_linked for the account the install is linked to, with no
+	// approval page, since that account made the link.
+	TypeLinkOwner = "link_owner"
+
+	// TypeCall goes from the account plane: one request of an agent app,
+	// for the install to run as the person it acts for. Signed.
+	TypeCall = "call"
+	// TypeResult goes from the install: the call's answer.
+	TypeResult = "result"
 )
 
 // Message is one frame on the connection.
 type Message struct {
 	Type   string  `json:"type"`
 	Report *Report `json:"report,omitempty"`
+	Person *Person `json:"person,omitempty"`
+	Call   *Call   `json:"call,omitempty"`
+	Result *Result `json:"result,omitempty"`
+}
+
+// Person links an account-plane account to a person on the install.
+type Person struct {
+	// Code is the one-time code the install made when its person asked to
+	// connect their account; empty on person_unlinked.
+	Code string `json:"code,omitempty"`
+	// Account is the account plane's id for the account; Email names it.
+	Account string `json:"account"`
+	Email   string `json:"email,omitempty"`
+	// Signature is the account plane's, over PersonString; set on
+	// person_linked and on person_unlinked from the account plane.
+	Signature string `json:"signature,omitempty"`
+}
+
+// PersonString is what the account plane signs on a person frame.
+func PersonString(kind, linkID string, p Person) []byte {
+	return []byte("meshploy-fleet-person\n" + kind + "\n" + linkID + "\n" + p.Code + "\n" + p.Account + "\n" + p.Email)
+}
+
+// SignPerson signs a person frame for linkID.
+func SignPerson(kind, linkID string, p *Person, key ed25519.PrivateKey) {
+	p.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(key, PersonString(kind, linkID, *p)))
+}
+
+// VerifyPerson checks a person frame against the account plane's key.
+func VerifyPerson(kind, linkID string, p Person, pub ed25519.PublicKey) error {
+	sig, err := base64.StdEncoding.DecodeString(p.Signature)
+	if err != nil || !ed25519.Verify(pub, PersonString(kind, linkID, p), sig) {
+		return errors.New("bad signature")
+	}
+	return nil
+}
+
+// Call is one request an agent app makes through the account plane: the
+// install runs it against its own API as the person the account is linked to.
+type Call struct {
+	ID string `json:"id"`
+	// Account is the account plane's id of the account the app acts for.
+	Account string `json:"account"`
+	// App names the agent app, as the person approved it ("Claude").
+	App    string `json:"app"`
+	Method string `json:"method"`
+	// Path is the API path with its query, under /api/v1/.
+	Path        string    `json:"path"`
+	ContentType string    `json:"content_type,omitempty"`
+	Body        []byte    `json:"body,omitempty"`
+	Expires     time.Time `json:"expires"`
+	Signature   string    `json:"signature"`
+}
+
+// CallTTL is how long a call may take to arrive.
+const CallTTL = time.Minute
+
+// CallString is what the account plane signs on a call.
+func CallString(linkID string, c Call) []byte {
+	sum := sha256.Sum256(c.Body)
+	return []byte("meshploy-fleet-call\n" + linkID + "\n" + c.ID + "\n" + c.Account + "\n" + c.App + "\n" +
+		c.Method + "\n" + c.Path + "\n" + c.ContentType + "\n" + hex.EncodeToString(sum[:]) + "\n" +
+		strconv.FormatInt(c.Expires.Unix(), 10))
+}
+
+// SignCall signs a call for linkID.
+func SignCall(linkID string, c *Call, key ed25519.PrivateKey) {
+	c.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(key, CallString(linkID, *c)))
+}
+
+// VerifyCall checks a call's signature and that it has not expired.
+func VerifyCall(linkID string, c Call, pub ed25519.PublicKey, now time.Time) error {
+	sig, err := base64.StdEncoding.DecodeString(c.Signature)
+	if err != nil || !ed25519.Verify(pub, CallString(linkID, c), sig) {
+		return errors.New("bad signature")
+	}
+	if now.After(c.Expires) || c.Expires.Sub(now) > CallTTL+MaxClockSkew {
+		return errors.New("the call has expired")
+	}
+	return nil
+}
+
+// Result is the install's answer to a call.
+type Result struct {
+	ID          string `json:"id"`
+	Status      int    `json:"status"`
+	ContentType string `json:"content_type,omitempty"`
+	Body        []byte `json:"body,omitempty"`
 }
 
 // Report is what an install tells its account plane about itself. Counts and

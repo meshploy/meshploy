@@ -12,31 +12,6 @@ import (
 	"github.com/meshploy/packages/server/middleware"
 )
 
-// remoteExcludedTools are stripped from the MCP surface exposed over the public
-// /mcp endpoint. They are operator / privilege-escalation / PII tools that must
-// never be reachable by a remote agent token regardless of that agent's grants:
-//   - node registration token = mesh + k3s enrolment credential
-//   - system backups = instance-wide operations
-//   - member/permission/invitation enumeration = discloses the org's humans
-//   - db_query / db_schema = live exec-into-pod surface (RCE-adjacent)
-//   - deploy_folder = reads a folder from the disk the server runs on: the
-//     agent's own for meshploy mcp, the gateway's here
-//
-// The local stdio server (meshploy mcp) keeps the full surface - that runs under
-// a developer's own login on their own machine, a different trust model.
-var remoteExcludedTools = []string{
-	"get_node_registration_token",
-	"get_system_backup",
-	"list_system_backup_objects",
-	"list_resource_permissions",
-	"list_member_permissions",
-	"list_org_members",
-	"list_invitations",
-	"db_query",
-	"db_schema",
-	"deploy_folder",
-}
-
 // MCPHandler serves the Model Context Protocol over Streamable HTTP at /mcp,
 // to an agent token (magt-) or a client connected through OAuth (moat-), which
 // acts as the person who approved it or the agent they chose. Each request is
@@ -83,7 +58,7 @@ func (h *Handler) MCPHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ms := mcpserver.New(c, orgID.String())
-	ms.DeleteTools(remoteExcludedTools...)
+	ms.DeleteTools(mcpserver.RemoteExcluded...)
 
 	sh := mcpsdk.NewStreamableHTTPServer(ms,
 		mcpsdk.WithStateLess(true),

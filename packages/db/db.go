@@ -97,6 +97,8 @@ func Migrate(db *gorm.DB) error {
 		&OAuthToken{},
 		&InstalledLicense{},
 		&FleetLink{},
+		&FleetPerson{},
+		&FleetCall{},
 		&Organization{},
 		&OrganizationMember{},
 		&ResourcePermission{},

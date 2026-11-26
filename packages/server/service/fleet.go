@@ -43,9 +43,26 @@ type FleetService struct {
 	// switch moved), fleetRestart to drop it and read the link again
 	// (enrolled or unlinked).
 	events chan string
+	// outbox carries what the install sends unasked: a person withdrawing
+	// their account here.
+	outbox chan fleet.Message
+
+	// For running calls: the JWT secret and the API's own port, to call
+	// itself as the person a call acts for.
+	auth      *AuthService
+	jwtSecret string
+	apiPort   int
 
 	mu        sync.Mutex
 	connected bool
+
+	// pending holds the one-time codes of people connecting their accounts.
+	pending map[string]pendingPerson
+	// seen holds the ids of calls already run, against replay.
+	seen map[string]time.Time
+	// tokens holds a console session per person and app, reused while it
+	// lasts, so each app shows as one sign-in on the person's list.
+	tokens map[string]appToken
 }
 
 const (
@@ -59,6 +76,9 @@ const (
 	fleetPingEvery   = 30 * time.Second
 	fleetReadTimeout = 90 * time.Second
 	fleetMaxBackoff  = 5 * time.Minute
+	// fleetMaxFrame bounds one frame from the account plane: a call carries
+	// a request body, as large as an API request may be.
+	fleetMaxFrame = 8 << 20
 )
 
 var (
@@ -69,10 +89,21 @@ var (
 func NewFleetService(database *gorm.DB, orgs *OrgService, domains *DomainService, system *SystemService) *FleetService {
 	return &FleetService{
 		db: database, orgs: orgs, domains: domains, system: system,
-		httpc:  &http.Client{Timeout: 20 * time.Second},
-		dialer: &websocket.Dialer{HandshakeTimeout: 20 * time.Second, Proxy: http.ProxyFromEnvironment},
-		events: make(chan string, 4),
+		httpc:   &http.Client{Timeout: 20 * time.Second},
+		dialer:  &websocket.Dialer{HandshakeTimeout: 20 * time.Second, Proxy: http.ProxyFromEnvironment},
+		events:  make(chan string, 4),
+		outbox:  make(chan fleet.Message, 16),
+		pending: map[string]pendingPerson{},
+		seen:    map[string]time.Time{},
+		tokens:  map[string]appToken{},
 	}
+}
+
+// RunCallsAs lets the service run agent apps' calls: it signs in as a person
+// with the API's JWT secret and calls the API on its own port. Without it,
+// calls are refused.
+func (s *FleetService) RunCallsAs(auth *AuthService, jwtSecret string, apiPort int) {
+	s.auth, s.jwtSecret, s.apiPort = auth, jwtSecret, apiPort
 }
 
 // FleetStatus is what the console shows about the link.
@@ -85,6 +116,10 @@ type FleetStatus struct {
 	ConnectedAt *time.Time `json:"connected_at,omitempty"`
 	LastError   string     `json:"last_error,omitempty"`
 	LinkedAt    *time.Time `json:"linked_at,omitempty"`
+	// AgentApps is the owner's switch for agent apps acting as people here.
+	AgentApps bool `json:"agent_apps"`
+	// People is how many people here linked their accounts.
+	People int `json:"people"`
 }
 
 func (s *FleetService) link(ctx context.Context) (*db.FleetLink, error) {
@@ -111,9 +146,12 @@ func (s *FleetService) Status(ctx context.Context) (*FleetStatus, error) {
 	up := s.connected
 	s.mu.Unlock()
 	created := l.CreatedAt
+	var people int64
+	s.db.WithContext(ctx).Model(&db.FleetPerson{}).Count(&people)
 	return &FleetStatus{
 		Linked: true, Account: l.Account, ConnectURL: l.ConnectURL, Report: l.Report,
 		Connected: up, ConnectedAt: l.ConnectedAt, LastError: l.LastError, LinkedAt: &created,
+		AgentApps: l.AgentApps, People: int(people),
 	}, nil
 }
 
@@ -160,7 +198,7 @@ func (s *FleetService) Enroll(ctx context.Context, token string, userID uuid.UUI
 		return nil, errors.New("the account plane sent a key that is not an Ed25519 public key")
 	}
 	l := db.FleetLink{
-		ConnectURL: t.URL, LinkID: out.LinkID, Account: out.Account,
+		ConnectURL: t.URL, LinkID: out.LinkID, Account: out.Account, AppURL: out.AppURL,
 		PrivateKey: db.EncryptedString(base64.StdEncoding.EncodeToString(priv)),
 		CloudKey:   out.PublicKey, Report: true, EnrolledBy: userID,
 	}
@@ -224,6 +262,11 @@ func (s *FleetService) Unlink(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).Where("id = ?", l.ID).Delete(&db.FleetLink{}).Error; err != nil {
 		return err
 	}
+	// Every person's account goes with the link it came through.
+	s.db.WithContext(ctx).Where("1 = 1").Delete(&db.FleetPerson{})
+	s.mu.Lock()
+	s.tokens, s.pending = map[string]appToken{}, map[string]pendingPerson{}
+	s.mu.Unlock()
 	s.signal(fleetRestart)
 	return nil
 }
@@ -325,10 +368,21 @@ func (s *FleetService) session(ctx context.Context, l *db.FleetLink) error {
 	s.setConnected(true)
 	defer s.setConnected(false)
 
+	// One writer at a time: reports, results of calls run alongside, and
+	// what the install has to say about its people.
+	var writeMu sync.Mutex
+	write := func(m fleet.Message) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		_ = conn.SetWriteDeadline(time.Now().Add(20 * time.Second))
+		return conn.WriteJSON(m)
+	}
+
 	// The reader: pongs keep the deadline moving; an "unlinked" from the
-	// account plane ends the link.
+	// account plane ends the link; people and calls are handled as they come,
+	// each call on its own so a slow one holds up nothing else.
 	read := make(chan error, 1)
-	conn.SetReadLimit(1 << 20)
+	conn.SetReadLimit(fleetMaxFrame)
 	_ = conn.SetReadDeadline(time.Now().Add(fleetReadTimeout))
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(fleetReadTimeout)) })
 	go func() {
@@ -338,9 +392,21 @@ func (s *FleetService) session(ctx context.Context, l *db.FleetLink) error {
 				read <- err
 				return
 			}
-			if m.Type == fleet.TypeUnlinked {
+			switch m.Type {
+			case fleet.TypeUnlinked:
 				read <- errFleetUnlinked
 				return
+			case fleet.TypePersonLinked, fleet.TypePersonUnlinked:
+				if m.Person != nil {
+					s.receivePerson(ctx, l, m.Type, *m.Person)
+				}
+			case fleet.TypeCall:
+				if m.Call != nil {
+					go func(c fleet.Call) {
+						res := s.runCall(ctx, l, c)
+						_ = write(fleet.Message{Type: fleet.TypeResult, Result: &res})
+					}(*m.Call)
+				}
 			}
 		}
 	}()
@@ -355,8 +421,7 @@ func (s *FleetService) session(ctx context.Context, l *db.FleetLink) error {
 			r := s.Report(ctx)
 			m = fleet.Message{Type: fleet.TypeReport, Report: &r}
 		}
-		_ = conn.SetWriteDeadline(time.Now().Add(20 * time.Second))
-		return conn.WriteJSON(m)
+		return write(m)
 	}
 	if err := send(); err != nil {
 		return err
@@ -383,6 +448,10 @@ func (s *FleetService) session(ctx context.Context, l *db.FleetLink) error {
 			if err := send(); err != nil {
 				return err
 			}
+		case m := <-s.outbox:
+			if err := write(m); err != nil {
+				return err
+			}
 		case <-report.C:
 			if err := send(); err != nil {
 				return err
@@ -405,6 +474,10 @@ func (s *FleetService) forget(ctx context.Context, l *db.FleetLink, why string) 
 		log.Printf("fleet: the account plane removed this link; unlinking")
 	}
 	s.db.WithContext(ctx).Where("id = ?", l.ID).Delete(&db.FleetLink{})
+	s.db.WithContext(ctx).Where("1 = 1").Delete(&db.FleetPerson{})
+	s.mu.Lock()
+	s.tokens, s.pending = map[string]appToken{}, map[string]pendingPerson{}
+	s.mu.Unlock()
 	return errFleetRestart
 }
 

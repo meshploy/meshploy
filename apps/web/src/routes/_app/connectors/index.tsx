@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { Section } from "@/components/services/form-primitives"
 import { ConnectionDetails, MySessions } from "@/components/auth/connected-sessions"
 import { KeysSection } from "@/components/agents/keys-section"
+import { CloudAccountSection } from "@/components/agents/cloud-account-section"
 import { HelpButton } from "@/help/help-button"
 import { useIsAdmin } from "@/store/org-store"
 
@@ -30,6 +31,7 @@ function ConnectorsPage() {
           <p className="text-xs text-muted-foreground">Browsers signed in to the console are on your <Link to="/account" hash="account-sessions" className="text-primary hover:underline">Account</Link> page.</p>
         </div>
       </Section>
+      <CloudAccountSection />
       {isAdmin && <KeysSection />}
     </div>
   )

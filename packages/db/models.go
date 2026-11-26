@@ -516,9 +516,48 @@ type FleetLink struct {
 	// failed, cleared once it is up.
 	ConnectedAt *time.Time `json:"connected_at"`
 	LastError   string     `gorm:"not null;default:''" json:"last_error"`
+	// AppURL is the account plane's web address, where a person approves
+	// agent apps acting as them.
+	AppURL string `gorm:"not null;default:''" json:"app_url"`
+	// AgentApps is the owner's second switch: while on, a person here who
+	// linked their account lets the agent apps they approved there act as
+	// them, through the account plane. Off by default.
+	AgentApps bool `gorm:"not null;default:false" json:"agent_apps"`
 }
 
 func (FleetLink) TableName() string { return "fleet_links" }
+
+// FleetPerson is one person here whose account on the account plane may act
+// as them: they linked it themselves, from their own Account page, and
+// approved it there. Agent apps that account allows act as this user, with
+// exactly their permissions.
+type FleetPerson struct {
+	Base
+	UserID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex" json:"user_id"`
+	// Account is the account plane's id of the account; Email names it.
+	Account string `gorm:"not null;uniqueIndex" json:"account"`
+	Email   string `gorm:"not null;default:''" json:"email"`
+
+	User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (FleetPerson) TableName() string { return "fleet_people" }
+
+// FleetCall records one call an agent app made here through the account
+// plane: which app, acting as whom, what it asked and how it was answered.
+type FleetCall struct {
+	ID     uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	At     time.Time  `gorm:"not null;index" json:"at"`
+	UserID *uuid.UUID `gorm:"type:uuid;index" json:"user_id,omitempty"`
+	App    string     `gorm:"not null;default:''" json:"app"`
+	Method string     `gorm:"not null" json:"method"`
+	Path   string     `gorm:"not null" json:"path"`
+	Status int        `gorm:"not null" json:"status"`
+	// Refused says why the call was not run, when it was not.
+	Refused string `gorm:"not null;default:''" json:"refused,omitempty"`
+}
+
+func (FleetCall) TableName() string { return "fleet_calls" }
 
 type TrustedDevice struct {
 	Base

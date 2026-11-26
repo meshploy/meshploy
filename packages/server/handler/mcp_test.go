@@ -8,7 +8,7 @@ import (
 )
 
 // TestRemoteExcludedToolsAreRealAndRemoved verifies that every tool named in
-// remoteExcludedTools actually exists on the full MCP surface (so a typo can't
+// mcpserver.RemoteExcluded actually exists on the full MCP surface (so a typo can't
 // silently leave a dangerous tool exposed) and that DeleteTools removes them -
 // while leaving the core deploy tools intact. No running API/cluster required:
 // mcpserver.New only registers tool closures; listing never calls the client.
@@ -17,16 +17,16 @@ func TestRemoteExcludedToolsAreRealAndRemoved(t *testing.T) {
 	ms := mcpserver.New(c, "00000000-0000-0000-0000-000000000000")
 
 	// Every excluded name must be a real, registered tool before deletion.
-	for _, name := range remoteExcludedTools {
+	for _, name := range mcpserver.RemoteExcluded {
 		if ms.GetTool(name) == nil {
-			t.Errorf("remoteExcludedTools lists %q but no such tool is registered — typo or renamed tool", name)
+			t.Errorf("RemoteExcluded lists %q but no such tool is registered — typo or renamed tool", name)
 		}
 	}
 
-	ms.DeleteTools(remoteExcludedTools...)
+	ms.DeleteTools(mcpserver.RemoteExcluded...)
 
 	// After deletion none of them are reachable on the remote surface.
-	for _, name := range remoteExcludedTools {
+	for _, name := range mcpserver.RemoteExcluded {
 		if ms.GetTool(name) != nil {
 			t.Errorf("tool %q survived DeleteTools and is still exposed remotely", name)
 		}
