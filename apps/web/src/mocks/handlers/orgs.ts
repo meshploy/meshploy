@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw"
-import { demoOrg, demoOrgMember, demoOrgMemberRavi, DEMO_ORG_ID } from "../data"
+import { demoAt, demoOrg, demoOrgMember, demoOrgMemberRavi, DEMO_ORG_ID } from "../data"
 import { db } from "../state"
 
 export const orgsHandlers = [
@@ -65,7 +65,7 @@ export const orgsHandlers = [
       org_id: DEMO_ORG_ID,
       email: "invited@example.com",
       role: "member",
-      expires_at: "2026-07-24T10:00:00Z",
+      expires_at: demoAt(30 * 86_400_000),
     })
   ),
 ]

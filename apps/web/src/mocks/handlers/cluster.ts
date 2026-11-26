@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw"
+import { demoAt } from "../data"
 
 export const clusterHandlers = [
   http.get("/api/v1/orgs/:orgId/cluster/join-token", () =>
@@ -20,7 +21,7 @@ export const clusterHandlers = [
     HttpResponse.json({
       key: "demo-headscale-preauth-key-new-0000000000",
       reusable: true,
-      expiration: "2026-07-24T10:00:00Z",
+      expiration: demoAt(30 * 86_400_000),
       headscale_url: "https://hs.demo.meshploy.app",
     })
   ),

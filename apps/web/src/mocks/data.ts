@@ -19,7 +19,15 @@ export const DEMO_TOKEN = (() => {
   return `eyJhbGciOiJub25lIn0.${payload}.`
 })()
 
-export const DEMO_NOW = "2026-06-24T10:00:00Z"
+// The sample workspace is dated from the moment the demo loads, so its
+// history always reads as recent.
+const NOW_MS = Date.now()
+export const DEMO_NOW = new Date(NOW_MS).toISOString()
+const MIN = 60_000
+const HOUR = 60 * MIN
+const DAY = 24 * HOUR
+/** A time relative to DEMO_NOW, in milliseconds (negative is the past). */
+export const demoAt = (ms: number) => new Date(NOW_MS + ms).toISOString()
 
 export const demoOrg = {
   id: DEMO_ORG_ID,
@@ -88,13 +96,15 @@ export const demoNodeGateway = {
   headscale_id: "1",
   headscale_online: true,
   headscale_last_seen: DEMO_NOW,
-  headscale_expiry: "2027-01-01T00:00:00Z",
+  headscale_expiry: demoAt(190 * DAY),
   headscale_tags: ["tag:server"],
   headscale_user: "meshploy",
   headscale_fqdn: "gateway.meshploy.ts.net",
   k8s_member: true,
   k8s_ready: true,
   k8s_node_name: "gateway",
+  // A build node carries the label the cluster schedules builds by.
+  k3s_labels: { "meshploy.com/role": "builder" },
   active_projects: [DEMO_PROJECT_ID],
 }
 
@@ -115,7 +125,7 @@ export const demoNodeWorker = {
   headscale_id: "2",
   headscale_online: true,
   headscale_last_seen: DEMO_NOW,
-  headscale_expiry: "2027-01-01T00:00:00Z",
+  headscale_expiry: demoAt(190 * DAY),
   headscale_tags: ["tag:worker"],
   headscale_user: "meshploy",
   headscale_fqdn: "worker-1.meshploy.ts.net",
@@ -208,9 +218,11 @@ export const demoDeployment = {
   source_branch: "main",
   source_commit: "abc1234",
   source_commit_message: "Rate-limit the login endpoint",
-  deployed_at: DEMO_NOW,
-  created_at: DEMO_NOW,
-  updated_at: DEMO_NOW,
+  // Older than the two weeks of history the workspace shows, so whatever
+  // ran since is newer than it.
+  deployed_at: demoAt(-20 * DAY),
+  created_at: demoAt(-20 * DAY),
+  updated_at: demoAt(-20 * DAY),
 }
 
 // Fixed ids so the demo's build config can point at a real integration, which
@@ -384,8 +396,8 @@ export const demoHostContainers = {
       status: "Up 9 days",
       health: "healthy",
       restart_count: 0,
-      created_at: "2026-06-15T09:12:00Z",
-      started_at: "2026-06-15T09:12:04Z",
+      created_at: demoAt(-9 * DAY - 48 * MIN),
+      started_at: demoAt(-9 * DAY - 48 * MIN + 4000),
       ports: [{ host_ip: "127.0.0.1", host_port: 3001, port: 3000, protocol: "tcp" }],
       network_mode: "monitoring_default",
       volumes: ["monitoring_grafana-data"],
@@ -404,8 +416,8 @@ export const demoHostContainers = {
       state: "running",
       status: "Up 9 days",
       restart_count: 2,
-      created_at: "2026-06-15T09:12:00Z",
-      started_at: "2026-06-15T09:12:02Z",
+      created_at: demoAt(-9 * DAY - 48 * MIN),
+      started_at: demoAt(-9 * DAY - 48 * MIN + 2000),
       ports: [{ host_ip: "127.0.0.1", host_port: 9090, port: 9090, protocol: "tcp" }],
       network_mode: "monitoring_default",
       bind_sources: ["/srv/monitoring/prometheus.yml"],
@@ -425,8 +437,8 @@ export const demoHostContainers = {
       state: "running",
       status: "Up 3 weeks",
       restart_count: 0,
-      created_at: "2026-06-01T11:00:00Z",
-      started_at: "2026-06-01T11:00:01Z",
+      created_at: demoAt(-23 * DAY + HOUR),
+      started_at: demoAt(-23 * DAY + HOUR + 1000),
       network_mode: "host",
       bind_sources: ["/var/lib/tailscale"],
       memory_mb: 38,
@@ -441,7 +453,7 @@ export const demoHostContainers = {
       state: "exited",
       status: "Exited (0) 6 hours ago",
       restart_count: 0,
-      created_at: "2026-06-24T03:00:00Z",
+      created_at: demoAt(-7 * HOUR),
       network_mode: "bridge",
       bind_sources: ["/srv/backups"],
       host_network: false,

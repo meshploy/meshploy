@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw"
-import { demoStack } from "../data"
-import { db } from "../state"
+import { demoRoute, demoStack } from "../data"
+import { db, record } from "../state"
 import { applyStack } from "./workspace"
 
 // Demo catalog - mirrors the shape the real API returns (manifest + compose).
@@ -119,17 +119,47 @@ volumes:
 // A tiny generic icon so <img src> (gallery, later) doesn't 404 in the demo.
 const demoIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#326690"/></svg>`
 
+// The demo shows the real catalog, read from its public repository as the API
+// reads it, and falls back to the three above when that cannot be reached.
+const catalogBase = "https://raw.githubusercontent.com/meshploy/meshploy-templates/main/"
+type Manifest = (typeof demoTemplates)[number]["manifest"]
+let catalog: Promise<Manifest[] | null> | undefined
+const remoteCatalog = () =>
+  (catalog ??= fetch(catalogBase + "index.json")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j: { templates?: Manifest[] } | null) => (j?.templates?.length ? j.templates : null))
+    .catch(() => null))
+
+async function findTemplate(id: string): Promise<{ manifest: Manifest; compose: string } | undefined> {
+  const remote = await remoteCatalog()
+  const manifest = remote?.find((t) => t.id === id)
+  if (manifest) {
+    const r = await fetch(`${catalogBase}templates/${id}/docker-compose.yml`).catch(() => undefined)
+    if (r?.ok) return { manifest, compose: await r.text() }
+  }
+  return demoTemplates.find((t) => t.manifest.id === id)
+}
+
 export const templatesHandlers = [
-  http.get("/api/v1/templates", () =>
-    HttpResponse.json(demoTemplates.map((t) => t.manifest))
+  http.get("/api/v1/templates", async () =>
+    HttpResponse.json((await remoteCatalog()) ?? demoTemplates.map((t) => t.manifest))
   ),
 
-  http.get("/api/v1/templates/:templateId/icon", () =>
-    new HttpResponse(demoIcon, { headers: { "Content-Type": "image/svg+xml" } })
-  ),
+  http.get("/api/v1/templates/:templateId/icon", async ({ params }) => {
+    const remote = await remoteCatalog()
+    const m = remote?.find((t) => t.id === params.templateId)
+    if (m) {
+      const file = m.icon || "logo.svg"
+      const r = await fetch(`${catalogBase}templates/${m.id}/${file}`).catch(() => undefined)
+      // raw.githubusercontent answers text/plain, so the type follows the name.
+      const type = file.endsWith(".png") ? "image/png" : file.endsWith(".webp") ? "image/webp" : "image/svg+xml"
+      if (r?.ok) return new HttpResponse(await r.arrayBuffer(), { headers: { "Content-Type": type } })
+    }
+    return new HttpResponse(demoIcon, { headers: { "Content-Type": "image/svg+xml" } })
+  }),
 
-  http.get("/api/v1/templates/:templateId", ({ params }) => {
-    const tpl = demoTemplates.find((t) => t.manifest.id === params.templateId)
+  http.get("/api/v1/templates/:templateId", async ({ params }) => {
+    const tpl = await findTemplate(String(params.templateId))
     if (!tpl) return new HttpResponse("template not found", { status: 404 })
     return HttpResponse.json({ manifest: tpl.manifest, compose: tpl.compose })
   }),
@@ -138,7 +168,7 @@ export const templatesHandlers = [
     "/api/v1/orgs/:orgId/projects/:projectId/templates/:templateId/deploy",
     async ({ params, request }) => {
       const body = (await request.json()) as { spec?: string; prompt_values?: Record<string, string> }
-      const tpl = demoTemplates.find((t) => t.manifest.id === params.templateId)
+      const tpl = await findTemplate(String(params.templateId))
       if (!tpl) return new HttpResponse("template not found", { status: 404 })
       const stack = {
           ...demoStack,
@@ -151,6 +181,22 @@ export const templatesHandlers = [
         }
       db.stacks.push(stack)
       try { applyStack(stack) } catch (e) { return HttpResponse.json({ detail: (e as Error).message }, { status: 400 }) }
+      // A variable that exposes a service becomes the stack's route, on a
+      // subdomain of the primary domain, as the API makes it.
+      const primary = db.domains.find((d) => d.is_primary)?.base_domain ?? "demo.example.com"
+      for (const v of (tpl.manifest.variables ?? []) as { key: string; expose?: { service: string; port: number } }[]) {
+        if (!v.expose) continue
+        const svc = db.services.find((x) => x.stack_id === stack.id && x.name === v.expose!.service)
+        if (!svc) continue
+        const sub = body.prompt_values?.[v.key]?.split(".")[0] || `${tpl.manifest.id}-${Math.random().toString(36).slice(2, 6)}`
+        const routeId = crypto.randomUUID()
+        db.routes.push(record({
+          ...demoRoute, id: routeId, project_id: String(params.projectId), stack_id: stack.id,
+          subdomain: sub, hostname: `${sub}.${primary}`, published: true,
+          targets: [{ id: crypto.randomUUID(), route_id: routeId, service_id: svc.id, target_port: v.expose.port, weight: 100,
+            path: "/", strip_path: false, node_id: null, target_ip: "", redirect_route_id: null, redirect_code: 301 }],
+        }))
+      }
       return HttpResponse.json(stack, { status: 201 })
     }
   ),

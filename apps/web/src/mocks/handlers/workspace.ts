@@ -27,6 +27,7 @@ import {
   DEMO_ORG_ID,
   DEMO_TOKEN,
   DEMO_SVC_DB,
+  demoAt,
 } from "../data"
 
 const O = "/api/v1/orgs/:orgId"
@@ -518,6 +519,20 @@ export function applyStack(stack: DemoRecord) {
       status: "running",
     })
     names.push(name)
+    // Its named volumes are the stack's own, mounted where the spec says.
+    for (const entry of Array.isArray(definition.volumes) ? definition.volumes : []) {
+      const [volName, mountPath] = String(entry).split(":")
+      if (!volName || !mountPath || volName.startsWith(".") || volName.startsWith("/")) continue
+      if (!(spec.volumes && volName in spec.volumes)) continue
+      let vol = db.volumes.find((v) => v.stack_id === stack.id && v.name === volName)
+      if (!vol) {
+        vol = record({ ...demoVolume, id: crypto.randomUUID(), project_id: stack.project_id, stack_id: stack.id,
+          name: volName, slug: volName, storage_gb: 5, status: "ready", mounts: [] })
+        db.volumes.push(vol)
+      }
+      if (!vol.mounts.some((m: DemoRecord) => m.service_id === svc!.id))
+        vol.mounts.push(record({ volume_id: vol.id, service_id: svc.id, mount_path: mountPath }))
+    }
   }
   stack.status = "running"
   stack.last_applied_at = now()
@@ -1579,8 +1594,8 @@ export const workspaceHandlers = [
   ),
   http.get("/api/v1/system/version", () =>
     json({
-      current: "v0.11.0-demo",
-      latest: "v0.11.0-demo",
+      current: import.meta.env.VITE_DEMO_VERSION ?? "demo",
+      latest: import.meta.env.VITE_DEMO_VERSION ?? "demo",
       channel: "dev",
       update_available: false,
       release_url: "",
@@ -1658,8 +1673,8 @@ export const workspaceHandlers = [
   }),
   http.post("/api/v1/system/check-updates", () =>
     json({
-      current: "v0.11.0-demo",
-      latest: "v0.11.0-demo",
+      current: import.meta.env.VITE_DEMO_VERSION ?? "demo",
+      latest: import.meta.env.VITE_DEMO_VERSION ?? "demo",
       channel: "dev",
       update_available: false,
       release_url: "",
@@ -1672,7 +1687,7 @@ export const workspaceHandlers = [
   http.get("/api/v1/system/exposure", () =>
     json({
       firewall_state: "ufw",
-      checked_at: "2026-09-10T08:00:00Z",
+      checked_at: demoAt(-86_400_000),
       ports: [],
       dismissed: true,
       // The demo gateway manages its own DNS, so the internal-route notice is
@@ -1686,7 +1701,7 @@ export const workspaceHandlers = [
   http.post("/api/v1/system/notices/:key/dismiss", ok),
   http.get("/api/v1/system/channels", () =>
     json({
-      current: { version: "v0.11.0-demo", channel: "", commit: "" },
+      current: { version: import.meta.env.VITE_DEMO_VERSION ?? "demo", channel: "", commit: "" },
       stable: { releases: [] },
       edge: { ahead_by: 0, commits: [] },
       unavailable: "Release information is unavailable in the browser demo.",

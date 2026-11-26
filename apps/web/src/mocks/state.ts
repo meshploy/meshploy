@@ -291,7 +291,7 @@ export const db: Record<string, DemoRecord[]> = {
     active_projects: n.id === seed.demoNodeWorker.id ? [...n.active_projects, stagingLevelId, secondProjectId] : n.active_projects,
     // Both cluster nodes are prepared for sandboxed projects, so the
     // sandboxed staging level can run where its services are pinned.
-    k3s_labels: n.id === seed.demoLaptop.id ? {} : { "meshploy.com/sandbox": "true" },
+    k3s_labels: n.id === seed.demoLaptop.id ? {} : { ...((n as { k3s_labels?: Record<string, string> }).k3s_labels ?? {}), "meshploy.com/sandbox": "true" },
     public_ip: "203.0.113.10",
     created_at: seed.DEMO_NOW,
     updated_at: seed.DEMO_NOW,
@@ -478,7 +478,7 @@ export const buildConfigs: Record<string, any> = {
   [seed.DEMO_SVC_API]: {
     ...seed.demoBuildConfig,
     deploy_hook_host: "api.demo.example.com",
-    deploy_hook_called_at: "2026-09-20T08:15:00Z",
+    deploy_hook_called_at: seed.demoAt(-2 * 3_600_000),
   },
   // A second one on Bitbucket, so the auto-deploy screens can be seen on more
   // than one provider without connecting anything.

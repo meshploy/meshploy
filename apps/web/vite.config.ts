@@ -6,6 +6,13 @@ import { TanStackRouterVite } from "@tanstack/router-plugin/vite"
 import path from "path"
 
 const isDemo = process.env.VITE_DEMO_MODE === "true"
+const demoVersion = () => {
+  try {
+    return "v" + readFileSync(path.resolve(__dirname, "../../VERSION"), "utf8").trim() + "-demo"
+  } catch {
+    return "demo"
+  }
+}
 
 /**
  * EDITION_WEB_DIR serves an edition's overlay in place of src/ee while
@@ -87,6 +94,8 @@ export default defineConfig({
   ...(isDemo && {
     define: {
       "import.meta.env.VITE_API_URL": '""',
+      // The demo reports the release it was built from.
+      "import.meta.env.VITE_DEMO_VERSION": JSON.stringify(demoVersion()),
     },
   }),
 })
