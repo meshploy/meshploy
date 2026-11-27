@@ -105,6 +105,7 @@ func buildCronJobSpec(p CronJobParams) batchv1.CronJobSpec {
 	}
 
 	podSpec := corev1.PodSpec{
+		DNSConfig: appDNSConfig(),
 		// No legacy service-link variables: see ApplyDeployment.
 		EnableServiceLinks: boolPtr(false),
 		RestartPolicy:      corev1.RestartPolicyNever,

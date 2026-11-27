@@ -56,6 +56,7 @@ func CreateRunJob(ctx context.Context, client kubernetes.Interface, p RunJobPara
 	}
 
 	podSpec := corev1.PodSpec{
+		DNSConfig: appDNSConfig(),
 		// No legacy service-link variables: see ApplyDeployment.
 		EnableServiceLinks: boolPtr(false),
 		RestartPolicy:      corev1.RestartPolicyNever,

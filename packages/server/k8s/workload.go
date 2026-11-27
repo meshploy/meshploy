@@ -237,6 +237,7 @@ func workloadPod(p WorkloadParams) (map[string]string, corev1.PodSpec) {
 	}
 
 	podSpec := corev1.PodSpec{
+		DNSConfig: appDNSConfig(),
 		// Kubernetes otherwise injects a variable per service in the namespace,
 		// named after it: a service called neo4j gives every container
 		// NEO4J_PORT_7687_TCP_PORT and a dozen more. Neo4j reads its own
