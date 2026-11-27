@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.28.0](https://github.com/meshploy/meshploy/compare/v0.27.0...v0.28.0) (2026-11-27)
+
+
+### Features
+
+* **connectors:** agent apps used through Meshploy Cloud show on every workspace ([ce6e54f](https://github.com/meshploy/meshploy/commit/ce6e54f7042f3ae855add4ce9a234ce921c816da))
+* **fleet:** a self-hosted server links to Meshploy Cloud and reports its state ([222efc6](https://github.com/meshploy/meshploy/commit/222efc663468ef4bb2930a66bf454eb1e598bb9a))
+* **fleet:** agent apps reach a linked server through people's Meshploy accounts ([03ea24c](https://github.com/meshploy/meshploy/commit/03ea24cbfdc81460e629ac1ae9e425eaa3b1b9af))
+* **fleet:** servers Meshploy Cloud runs link themselves at start ([2f276ad](https://github.com/meshploy/meshploy/commit/2f276ad0cdae046e6f68efec5b412557ee73dfa6))
+* **mcp:** every tool says what calling it can do ([9e9d5d8](https://github.com/meshploy/meshploy/commit/9e9d5d807c821fe56f4a1a7c9e123eb6e532df7f))
+* **services:** a monorepo's apps are recognised and each becomes a service, built from its folder or with its workspace's packages ([61a5a12](https://github.com/meshploy/meshploy/commit/61a5a124940466268a2bb74c9fc57e71c5841843))
+
+
+### Bug Fixes
+
+* **backups:** ClickHouse databases are backed up and restored, instead of every scheduled backup failing ([58c5b20](https://github.com/meshploy/meshploy/commit/58c5b20f3837b6176878aeaba2936809cbfd2981))
+* **backups:** Redis and Dragonfly backups hold a real snapshot and can be restored ([c92f32f](https://github.com/meshploy/meshploy/commit/c92f32f9e070ebd3c251631cc1cbc570624ce2c8))
+* **builder:** railpack's version is pinned, so the image builds when GitHub's API refuses the runner ([80c3ce3](https://github.com/meshploy/meshploy/commit/80c3ce3cc798a2ae220f8307b997f320ad15474a))
+* **builds:** an app that cannot start says so before it ships, and one that exits at once is explained ([c0e4fe0](https://github.com/meshploy/meshploy/commit/c0e4fe009eafc03cba8f156c50f9c558d80dae12))
+* **cluster:** the machines' diagram is called Network, as it draws the gateway at the centre ([0baacb6](https://github.com/meshploy/meshploy/commit/0baacb6c43a9bdeec32ee2731d01a6e193ec0839))
+* **demo:** the demo is dated from today and shows the real template catalog ([2089d86](https://github.com/meshploy/meshploy/commit/2089d861d4e9c5b80e20f667476b5f1d25ea7d53))
+* **tests:** test runs leave no Postgres volume or test databases behind ([6ab57a0](https://github.com/meshploy/meshploy/commit/6ab57a03d52a5e8a4106b23e00b60c3bf1604f64))
+* **workloads:** apps and jobs look up outside names first instead of trying cluster suffixes ([7101096](https://github.com/meshploy/meshploy/commit/7101096be0603c1c7a17a641b127bf0114b95dc0))
+
 ## [0.27.0](https://github.com/meshploy/meshploy/compare/v0.26.0...v0.27.0) (2026-11-24)
 
 
