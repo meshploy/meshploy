@@ -145,6 +145,7 @@ type MCPBuildConfig struct {
 	GitRepo        string `json:"git_repo,omitempty"`
 	Branch         string `json:"branch,omitempty"`
 	DockerfilePath string `json:"dockerfile_path,omitempty"`
+	RootDir        string `json:"root_dir,omitempty"`
 	AutoDeploy     bool   `json:"auto_deploy"`
 }
 

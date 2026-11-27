@@ -505,6 +505,8 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 			Repo             string `json:"repo" minLength:"1"`
 			Branch           string `json:"branch" minLength:"1"`
 			DockerfilePath   string `json:"dockerfile_path,omitempty"`
+			// RootDir is the folder the app is in; empty, the root.
+			RootDir string `json:"root_dir,omitempty"`
 		}
 	}) (*DetectStackOutput, error) {
 		_, orgID, integrationID, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.Body.GitIntegrationID)
@@ -518,9 +520,12 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 			}
 			idp = &integrationID
 		}
-		d, err := h.svc.GitIntegrations.DetectStack(ctx, orgID, idp, in.Body.Repo, in.Body.Branch, in.Body.DockerfilePath)
+		d, err := h.svc.GitIntegrations.DetectStack(ctx, orgID, idp, in.Body.Repo, in.Body.Branch, in.Body.DockerfilePath, in.Body.RootDir)
 		if errors.Is(err, service.ErrGitIntegrationNotFound) {
 			return nil, huma.Error404NotFound("git integration not found")
+		}
+		if errors.Is(err, service.ErrBuildFolder) {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		if err != nil {
 			return nil, huma.Error422UnprocessableEntity(err.Error())

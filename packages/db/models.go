@@ -1096,7 +1096,7 @@ type BuildConfig struct {
 	GitIntegrationID *uuid.UUID `gorm:"type:uuid"              json:"git_integration_id"`
 	GitRepo          string     `json:"git_repo"`
 	Branch           string     `gorm:"default:'main'"         json:"branch"`
-	RootDir          string     `gorm:"default:'.'"` // root of the app within the repo
+	RootDir          string     `gorm:"default:'.'"            json:"root_dir"` // the app's folder within the repository; "." is its root
 	// Uploaded source: a folder sent as a tar.gz instead of a repository,
 	// kept as a blob in the registry the service's images go to, in a
 	// repository of its own (UploadRepo). Built when GitRepo is empty; a Git
@@ -1168,6 +1168,11 @@ type BuildConfig struct {
 	// service is built from: a push that touches none of them is ignored.
 	// Empty means every push builds, which is what it did before.
 	WatchPaths  StringArray     `gorm:"type:jsonb;not null;default:'[]'" json:"watch_paths"`
+	// WorkspaceBuild builds an app of a JavaScript workspace from the
+	// repository's root, where the install links the workspace's own packages
+	// it imports; RootDir stays the app's folder, which its build and start
+	// commands name.
+	WorkspaceBuild bool `gorm:"not null;default:false" json:"workspace_build"`
 	DeployToken EncryptedString `gorm:"type:text"              json:"deploy_token"`
 	// DeployHookHost is the host the deploy webhook was last called through,
 	// and DeployHookCalledAt when. The webhook URL is pasted into someone's CI,
@@ -1180,6 +1185,15 @@ type BuildConfig struct {
 	Service             Service              `gorm:"foreignKey:ServiceID"                                        json:"-"`
 	GitIntegration      *GitIntegration      `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL"    json:"-"`
 	RegistryIntegration *RegistryIntegration `gorm:"foreignKey:RegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
+}
+
+// BuildContext is the folder a build runs in: the app's, or the
+// repository's root for an app built as its workspace's.
+func (bc BuildConfig) BuildContext() string {
+	if bc.WorkspaceBuild {
+		return "."
+	}
+	return bc.RootDir
 }
 
 // BuildsFromUpload says a build takes the uploaded folder: there is one, and

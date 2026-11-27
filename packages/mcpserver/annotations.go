@@ -42,7 +42,7 @@ var toolKinds = map[string]toolKind{
 	"list_backup_configs": read, "list_backup_objects": read, "get_system_backup": read, "list_system_backup_objects": read,
 	"list_notification_channels": read, "list_domains": read, "list_tcp_ports": read,
 	"get_node_registration_token": read,
-	"list_git_integrations":       read, "list_git_repos": read, "list_git_branches": read,
+	"list_git_integrations":       read, "list_git_repos": read, "list_git_branches": read, "detect_repository": read,
 	"list_registry_integrations": read, "list_storage_integrations": read, "list_dns_providers": read,
 
 	// add
@@ -81,7 +81,7 @@ var toolKinds = map[string]toolKind{
 var openWorld = map[string]bool{
 	"create_route": true, "publish_route": true, "publish_tcp_port": true, "reopen_tcp_port": true, "deploy_template": true,
 	"invite_member": true, "share_app": true,
-	"create_git_integration": true, "list_git_repos": true, "list_git_branches": true,
+	"create_git_integration": true, "list_git_repos": true, "list_git_branches": true, "detect_repository": true,
 	"create_dns_provider": true, "check_dns_provider": true, "delete_dns_provider": true, "verify_route_hostname": true,
 	"create_registry_integration": true, "create_storage_integration": true,
 }

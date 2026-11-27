@@ -92,6 +92,16 @@ Choosing a repository and branch for a new service has Meshploy look at a few of
 
 Only fields still holding their default are filled in, so nothing typed by hand is replaced. Every value stays editable, and the suggestions after the first build catch what a look at a few files cannot see.
 
+## A repository with more than one app {#app-folder}
+
+A repository can hold several apps, each in a folder of its own (a monorepo, often tied together by npm or pnpm workspaces, Turborepo or Nx), or one app kept in a folder beside other files. The look finds the folders with an app of their own and asks which one the service runs. Choosing one looks at that folder's app, builds from it, and deploys on a push only when the push changed it. A repository with a single app in a folder has that folder filled in. The folder can be changed later on the service's Config page, under Build.
+
+**Create a service for each** makes one service per app at once, each looked at in its own folder and named after it, sharing the rest of the form.
+
+An app of a JavaScript workspace that imports the workspace's own packages, such as `packages/ui`, cannot be built from its folder alone: the package manager links those packages in at the repository's root. Such an app is built from the root instead. The install runs for the whole workspace, and the build and start commands name the app in the package manager's own words (`pnpm --filter web... run build`, `npm run start --workspace apps/web`, Turborepo's `--filter`). A static site built with Vite or Create React App is served from its output folder through `RAILPACK_SPA_OUTPUT_DIR`, and an Nx app is built by name through `RAILPACK_NX_APP`. Pushes deploy it when they change its folder or a package it uses. The **Build from the repository's root** switch under the app's folder turns this on or off.
+
+The look also names any folder recorded as another repository. That happens when an app was made inside the repository with its own `.git`, or added as a git submodule. Builds do not fetch those, so the folder is empty when the app is built. Remove the folder's `.git` and add its files, or deploy its own repository.
+
 ## Suggestions after a build {#hints}
 
 Each build also looks at what the app is: its language, its framework and entry point, dependencies known to need a lot of memory, a Dockerfile in the repository. Set against the service's settings, that turns into suggestions on the service's page, each with its fix, and a line on the workspace overview:
@@ -121,6 +131,8 @@ A fix saves the setting; it reaches the running app on the next deploy, which th
 - **Start command** {#start-command -> commands}: Replaces the command the image starts with, run through its shell; changes on the next deploy without a rebuild. Empty: the image's own.
 - **Out of memory** {#out-of-memory -> trouble}: The container went over its memory limit and was killed. Raise the limit under the service's resources.
 - **Detected** {#detected -> detect}: What a look at the repository found, and the settings it filled in. Every one stays editable.
+- **App folder** {#app-folder -> app-folder}: The folder of the repository the service's app is in, when it is not at the root. Builds start there, and pushes deploy only when they change it.
+- **Build from the repository's root** {#workspace-build -> app-folder}: For an app that imports its JavaScript workspace's own packages: installed for the whole workspace, built and started by name.
 - **Suggestion** {#hint -> hints}: Advice from the last build about how the service is set up, such as a missing start command or too little memory for what the app loads, with its fix.
 - **Build cache** {#build-cache -> build-cache}: Layers kept from earlier builds, shared by the project's services and trimmed back to the server's limit after each build. Clearing it only makes the next build slower.
 - **Redeploy** {#redeploy -> deploys}: Runs the image the service runs now again, for changed variables, without building.

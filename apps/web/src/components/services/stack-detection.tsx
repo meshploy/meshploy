@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Loader2, ScanSearch } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
 import { gitIntegrations, type ApiDetection } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { TermInfo } from "@/help/term"
 
 /** What the settings are filled in from, so the form can say it. */
 export interface DetectionApplied {
+  /** The app's folder, when the repository holds one app and it is in a folder. */
+  folder?: string
+  /** Built from the repository's root, for an app using its workspace's packages. */
+  workspace?: boolean
+  buildCommand?: string
   builder?: string
   port?: number
   startCommand?: string
@@ -19,28 +26,40 @@ export interface DetectionApplied {
  * command, the memory. Waits for typing to settle, since a public repository
  * is typed in by hand.
  */
-export function useStackDetection(orgId: string | undefined, source: { gitIntegrationId: string; gitRepo: string; gitBranch: string; dockerfilePath: string }) {
+export function useStackDetection(orgId: string | undefined, source: { gitIntegrationId: string; gitRepo: string; gitBranch: string; dockerfilePath: string; rootDir: string }) {
   const token = useAuthStore((s) => s.token)!
-  const key = [source.gitIntegrationId, source.gitRepo.trim(), source.gitBranch.trim()] as const
+  const key = [source.gitIntegrationId, source.gitRepo.trim(), source.gitBranch.trim(), source.rootDir] as const
   const [settled, setSettled] = useState(key)
   useEffect(() => {
     const t = setTimeout(() => setSettled(key), 600)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key[0], key[1], key[2]])
-  const [integration, repo, branch] = settled
+  }, [key[0], key[1], key[2], key[3]])
+  const [integration, repo, branch, folder] = settled
   return useQuery({
-    queryKey: ["detect-stack", orgId, integration, repo, branch],
+    queryKey: ["detect-stack", orgId, integration, repo, branch, folder],
     queryFn: () =>
-      gitIntegrations.detect(orgId!, { git_integration_id: integration || undefined, repo, branch }, token),
+      gitIntegrations.detect(orgId!, { git_integration_id: integration || undefined, repo, branch, root_dir: folder || undefined }, token),
     enabled: !!orgId && !!repo && !!branch,
     staleTime: 5 * 60_000,
     retry: false,
+    // Choosing a folder looks again; the folder list stays while it does.
+    placeholderData: keepPreviousData,
   })
 }
 
+const ROOT = "."
+
 /** The line under the repository: what it is, what was filled in, and why. */
-export function StackDetection({ query, applied }: { query: ReturnType<typeof useStackDetection>; applied: DetectionApplied }) {
+export function StackDetection({ query, applied, folder, onFolder, onCreateEach }: {
+  query: ReturnType<typeof useStackDetection>
+  applied: DetectionApplied
+  /** The app's folder in the repository; "" is its root. */
+  folder: string
+  onFolder: (folder: string) => void
+  /** Offered when the repository holds several apps: a service for each. */
+  onCreateEach?: () => void
+}) {
   const { data, isFetching, error } = query
   if (isFetching && !data) {
     return (
@@ -79,12 +98,42 @@ export function StackDetection({ query, applied }: { query: ReturnType<typeof us
           {data.notes.map((n) => <li key={n}>{n}</li>)}
         </ul>
       )}
+      {data.apps && data.apps.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-6" data-testid="app-folder">
+          <span className="text-xs font-medium text-muted-foreground">
+            App folder{data.workspace && <span className="font-normal"> · {data.workspace}</span>}
+          </span>
+          <Select value={folder || ROOT} onValueChange={(v) => onFolder(!v || v === ROOT ? "" : v)}>
+            <SelectTrigger className="h-8 min-w-56 text-sm bg-background/60 border-border/60">
+              <SelectValue>{folder || "Repository root"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent className="w-auto min-w-(--anchor-width)">
+              {data.apps.map((a) => (
+                <SelectItem key={a.folder} value={a.folder}>
+                  <span className="font-mono text-[13px]">{a.folder}</span>
+                  {a.summary && <span className="text-muted-foreground">{"\u00a0· "}{a.summary}</span>}
+                </SelectItem>
+              ))}
+              <SelectItem value={ROOT}>Repository root</SelectItem>
+            </SelectContent>
+          </Select>
+          {isFetching && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {onCreateEach && data.apps.length > 1 && (
+            <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={onCreateEach}>
+              Create a service for each
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
 function describe(d: ApiDetection, a: DetectionApplied) {
   const out: string[] = []
+  if (a.folder) out.push(`folder ${a.folder}`)
+  if (a.workspace) out.push("build from the repository's root")
+  if (a.buildCommand) out.push("build command")
   if (a.builder && d.builder) out.push(d.builder === "dockerfile" ? "Dockerfile builder" : "Railpack builder")
   if (a.port) out.push(`port ${a.port}`)
   if (a.startCommand) out.push("start command")

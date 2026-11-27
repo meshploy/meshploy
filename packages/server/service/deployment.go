@@ -457,7 +457,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		GitBranch:      a.bc.Branch,
 		GitCommit:      a.commit,
 		GitToken:       a.git.Token,
-		RootDir:        a.bc.RootDir,
+		RootDir:        a.bc.BuildContext(),
 		DockerfilePath: a.bc.DockerfilePath,
 		Builder:        string(db.Builder(a.bc.Builder)),
 		ImageDest:      a.imageName,

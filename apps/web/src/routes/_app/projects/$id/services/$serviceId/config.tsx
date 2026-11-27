@@ -467,6 +467,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     gitIntegrationId: "",
     gitRepo: "",
     gitBranch: "main",
+    rootDir: "",
+    workspaceBuild: false,
     builder: "railpack" as "railpack" | "dockerfile",
     dockerfilePath: "Dockerfile",
     installCommand: "",
@@ -510,6 +512,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       gitIntegrationId: bc?.git_integration_id ?? "",
       gitRepo: bc?.git_repo ?? "",
       gitBranch: bc?.branch ?? "main",
+      rootDir: bc?.root_dir && bc.root_dir !== "." ? bc.root_dir : "",
+      workspaceBuild: bc?.workspace_build ?? false,
       builder: (bc?.builder as typeof form.builder) ?? "railpack",
       dockerfilePath: bc?.dockerfile_path ?? "Dockerfile",
       installCommand: bc?.install_command ?? "",
@@ -578,6 +582,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           git_integration_id: git && form.gitVisibility === "private" ? (form.gitIntegrationId || undefined) : "",
           git_repo: git ? form.gitRepo : "",
           branch: git ? form.gitBranch : undefined,
+          root_dir: git ? form.rootDir.trim() || "." : undefined,
+          workspace_build: git ? form.workspaceBuild && !!form.rootDir.trim() : undefined,
           builder: form.builder,
           dockerfile_path: form.builder === "dockerfile" ? form.dockerfilePath : undefined,
           install_command: form.installCommand.trim(),
@@ -654,6 +660,31 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       {/* ── Build ─────────────────────────────────────────────── */}
       {form.source !== "image" && (
         <Section title="Build" subtitle="Configure where and how the build job runs">
+          {form.source === "git" && (
+            <Field label="App folder">
+              <input
+                value={form.rootDir}
+                onChange={(e) => patch({ rootDir: e.target.value })}
+                placeholder="Repository root"
+                className={cn(inputCls, "font-mono")}
+                aria-label="App folder"
+              />
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                The folder the app is in, as apps/web, when the repository holds more than this app. Empty builds from the root.
+              </p>
+              {form.rootDir.trim() && (
+                <label className="mt-3 flex items-start gap-3">
+                  <Switch checked={form.workspaceBuild} onCheckedChange={(v) => patch({ workspaceBuild: v })} aria-label="Build from the repository's root" />
+                  <span className="text-xs">
+                    <span className="font-medium">Build from the repository&apos;s root</span>
+                    <span className="block text-muted-foreground">
+                      For an app that imports its workspace&apos;s own packages. The install runs for the whole workspace; the build and start commands name the app.
+                    </span>
+                  </span>
+                </label>
+              )}
+            </Field>
+          )}
           <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
               <Server className="h-3.5 w-3.5" /> Builder node

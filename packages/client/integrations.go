@@ -226,6 +226,24 @@ func (c *Client) DeleteDNSProvider(orgID, id string) error {
 
 // ── Repo/branch helpers ───────────────────────────────────────────────────────
 
+// DetectBody asks what a repository's branch is: the app in RootDir, or at
+// its root, and the apps the repository holds.
+type DetectBody struct {
+	GitIntegrationID string `json:"git_integration_id,omitempty"`
+	Repo             string `json:"repo"`
+	Branch           string `json:"branch"`
+	RootDir          string `json:"root_dir,omitempty"`
+}
+
+// DetectRepository is the API's detection, as it sends it.
+func (c *Client) DetectRepository(orgID string, body DetectBody) (map[string]any, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/detect-stack", body)
+	if err != nil {
+		return nil, err
+	}
+	return decode[map[string]any](resp)
+}
+
 type RepoItem struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`

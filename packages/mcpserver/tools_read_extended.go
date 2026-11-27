@@ -6,6 +6,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpsdk "github.com/mark3labs/mcp-go/server"
+
+	"github.com/meshploy/packages/client"
 )
 
 func (s *srv) registerReadToolsExtended(ms *mcpsdk.MCPServer) {
@@ -172,6 +174,20 @@ func (s *srv) registerReadToolsExtended(ms *mcpsdk.MCPServer) {
 			mcp.WithString("repo_url", mcp.Required(), mcp.Description("Repository URL or full_name from list_git_repos")),
 		),
 		s.handleListGitBranches,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("detect_repository",
+			mcp.WithDescription("Look at a repository's branch before creating a service from it: what the app is, and the builder, port, start command, memory and variables that fit it. "+
+				"A repository holding several apps (a monorepo) lists them in apps, by folder: call again with root_dir set to a folder for that app's settings, then create_service with root_dir and the settings returned. "+
+				"An app using its JavaScript workspace's own packages returns workspace_build with build_command, start_command, build_env_vars and watch_paths: pass them all to create_service. "+
+				"unfetched names folders that are another repository a build never sees; tell the user."),
+			mcp.WithString("repo", mcp.Required(), mcp.Description("Repository URL, or owner/name with integration_id")),
+			mcp.WithString("branch", mcp.Required(), mcp.Description("Branch to look at")),
+			mcp.WithString("integration_id", mcp.Description("Git integration ID for a private repository (list_git_integrations); omit for a public one")),
+			mcp.WithString("root_dir", mcp.Description("The app's folder, as apps/web; omit for the root")),
+		),
+		s.handleDetectRepository,
 	)
 
 	// ── Registry & storage integrations ──────────────────────────────────────
@@ -490,6 +506,19 @@ func (s *srv) handleListGitBranches(_ context.Context, req mcp.CallToolRequest) 
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return jsonResult(branches)
+}
+
+func (s *srv) handleDetectRepository(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	d, err := s.c.DetectRepository(s.orgID, client.DetectBody{
+		GitIntegrationID: mcp.ParseString(req, "integration_id", ""),
+		Repo:             mcp.ParseString(req, "repo", ""),
+		Branch:           mcp.ParseString(req, "branch", ""),
+		RootDir:          mcp.ParseString(req, "root_dir", ""),
+	})
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(d)
 }
 
 func (s *srv) handleListRegistryIntegrations(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {

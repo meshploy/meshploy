@@ -1486,9 +1486,28 @@ export const workspaceHandlers = [
     return ok()
   }),
   // A look at a repository before its first build: demo/api is a FastAPI app
-  // loading torch, demo/web a Node app with a Dockerfile that starts it.
+  // loading torch, demo/web a Node app with a Dockerfile that starts it, and
+  // demo/shop a pnpm monorepo holding both, one in each folder.
   http.post(`${O}/detect-stack`, async ({ request }) => {
     const b = await body(request)
+    if (String(b.repo).includes("shop")) {
+      const apps = [
+        { folder: "apps/api", summary: "Python · FastAPI (app/main.py)" },
+        { folder: "apps/web", summary: "Node.js · Dockerfile" },
+      ]
+      const layout = { apps, workspace: "pnpm workspaces" }
+      if (b.root_dir === "apps/web")
+        return json({ facts: { languages: ["node"], dockerfile: "Dockerfile", dockerfile_cmd: true, expose: 8080 },
+          summary: "Node.js · Dockerfile", builder: "dockerfile", port: 8080, folder: "apps/web", ...layout,
+          notes: ["Builds with the repository's Dockerfile, which says how to start the app."] })
+      if (b.root_dir === "apps/api")
+        return json({ facts: { languages: ["python"], framework: "fastapi", entry: "app.main:app" },
+          summary: "Python · FastAPI (app/main.py)", builder: "railpack", port: 8000, folder: "apps/api", ...layout,
+          start_command: "uvicorn app.main:app --host 0.0.0.0 --port $PORT",
+          notes: ["Starts the FastAPI app in app/main.py; check the command before deploying."] })
+      return json({ facts: { languages: ["node"] }, summary: "Node.js", builder: "railpack", ...layout,
+        notes: ["This repository holds 2 apps. Choose the folder of the one this service runs."] })
+    }
     if (String(b.repo).includes("web"))
       return json({ facts: { languages: ["node"], dockerfile: "Dockerfile", dockerfile_cmd: true, expose: 8080 },
         summary: "Node.js · Dockerfile", builder: "dockerfile", port: 8080,

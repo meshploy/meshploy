@@ -312,6 +312,7 @@ func (s *srv) handleGetBuildConfig(_ context.Context, req mcp.CallToolRequest) (
 		GitRepo:        bc.GitRepo,
 		Branch:         bc.Branch,
 		DockerfilePath: bc.DockerfilePath,
+		RootDir:        bc.RootDir,
 		AutoDeploy:     bc.AutoDeploy,
 	})
 }

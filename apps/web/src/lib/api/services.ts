@@ -173,6 +173,9 @@ export interface ApiBuildConfig {
   upload_files?: number
   uploaded_at?: string | null
   dockerfile_path: string
+  /** The app's folder in the repository; "." is its root. */
+  root_dir?: string
+  workspace_build?: boolean
   /** Replaces the builder's install step (Railpack); empty = Railpack's own. */
   install_command?: string
   /** Replaces the builder's build step (Railpack); empty = Railpack's own. */
@@ -226,6 +229,12 @@ export interface CreateServiceBody {
   // Build config - a BuildConfig row is created server-side when git_repo is set
   git_integration_id?: string
   git_repo?: string
+  /** The app's folder in the repository; empty is its root. */
+  root_dir?: string
+  /** Build root_dir's app from the repository's root, for one using its workspace's packages. */
+  workspace_build?: boolean
+  build_env_vars?: string
+  watch_paths?: string[]
   /** Built from a folder sent to .../source afterwards, not a repository. */
   from_upload?: boolean
   branch?: string
@@ -290,6 +299,9 @@ export interface UpdateBuildConfigBody {
   image_retention?: number
   auto_deploy?: boolean
   watch_paths?: string[]
+  /** The app's folder in the repository; "" or "." is its root. */
+  root_dir?: string
+  workspace_build?: boolean
 }
 
 /** A folder the API stored as a service's source. */

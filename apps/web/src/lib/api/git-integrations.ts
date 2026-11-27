@@ -121,7 +121,7 @@ export const gitIntegrations = {
     apiFetch<void>(`/api/v1/orgs/${orgId}/git-integrations/${id}`, { method: "DELETE" }, token),
 
   /** Looks at a repository's branch and suggests how to build and run it. No integration: a public repository. */
-  detect: (orgId: string, body: { git_integration_id?: string; repo: string; branch: string; dockerfile_path?: string }, token: string) =>
+  detect: (orgId: string, body: { git_integration_id?: string; repo: string; branch: string; dockerfile_path?: string; root_dir?: string }, token: string) =>
     apiFetch<ApiDetection>(`/api/v1/orgs/${orgId}/detect-stack`, { method: "POST", body: JSON.stringify(body) }, token),
 }
 
@@ -144,4 +144,17 @@ export interface ApiDetection {
   notes?: string[]
   /** What the repository's example env files name and its code reads. */
   variables?: FoundVariable[]
+  /** The folder looked at, when it is not the root. */
+  folder?: string
+  /** Its app imports its JavaScript workspace's packages: built from the root, narrowed to it. */
+  workspace_build?: boolean
+  build_command?: string
+  build_env_vars?: string
+  watch_paths?: string[]
+  /** Folders holding an app of their own, when the repository holds more than its root. */
+  apps?: { folder: string; summary?: string }[]
+  /** The tool tying its folders together, as "pnpm workspaces". */
+  workspace?: string
+  /** Folders recorded as another repository, which a build finds empty. */
+  unfetched?: string[]
 }

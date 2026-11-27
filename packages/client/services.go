@@ -146,6 +146,8 @@ type BuildConfig struct {
 	GitRepo               string  `json:"git_repo"`
 	Branch                string  `json:"branch"`
 	DockerfilePath        string  `json:"dockerfile_path"`
+	RootDir               string  `json:"root_dir"`
+	WorkspaceBuild        bool    `json:"workspace_build"`
 	AutoDeploy            bool    `json:"auto_deploy"`
 	GitIntegrationID      *string `json:"git_integration_id"`
 	RegistryIntegrationID *string `json:"registry_integration_id"`
@@ -158,6 +160,8 @@ type UpdateBuildConfigBody struct {
 	Branch                *string `json:"branch,omitempty"`
 	Builder               *string `json:"builder,omitempty"`
 	DockerfilePath        *string `json:"dockerfile_path,omitempty"`
+	RootDir               *string `json:"root_dir,omitempty"`
+	WorkspaceBuild        *bool   `json:"workspace_build,omitempty"`
 	AutoDeploy            *bool   `json:"auto_deploy,omitempty"`
 	GitIntegrationID      *string `json:"git_integration_id,omitempty"`
 	RegistryIntegrationID *string `json:"registry_integration_id,omitempty"`
@@ -262,11 +266,17 @@ type CreateServiceBody struct {
 	// FromUpload builds the service from a folder sent with UploadSource.
 	FromUpload bool   `json:"from_upload,omitempty"`
 	Branch     string `json:"branch,omitempty"`
-	Builder    string `json:"builder,omitempty"`
-	Type       string `json:"type,omitempty"`
-	Engine     string `json:"engine,omitempty"`
-	Version    string `json:"version,omitempty"`
-	StorageGB  int    `json:"storage_gb,omitempty"`
+	RootDir    string `json:"root_dir,omitempty"`
+	// WorkspaceBuild builds RootDir's app from the repository's root, for an
+	// app using its JavaScript workspace's packages.
+	WorkspaceBuild bool   `json:"workspace_build,omitempty"`
+	BuildCommand   string `json:"build_command,omitempty"`
+	BuildEnvVars   string `json:"build_env_vars,omitempty"`
+	Builder        string `json:"builder,omitempty"`
+	Type           string `json:"type,omitempty"`
+	Engine         string `json:"engine,omitempty"`
+	Version        string `json:"version,omitempty"`
+	StorageGB      int    `json:"storage_gb,omitempty"`
 	// Database credentials. Left empty the API names them after the service
 	// and generates a password; a migration sends the ones the data already
 	// uses, because the dump it will restore expects them.

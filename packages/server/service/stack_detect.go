@@ -49,6 +49,23 @@ type Detection struct {
 	Notes []string `json:"notes,omitempty"`
 	// Variables are what its example env files name and its code reads.
 	Variables []FoundVariable `json:"variables,omitempty"`
+	// Folder is the folder looked at, when it is not the root.
+	Folder string `json:"folder,omitempty"`
+	// WorkspaceBuild is an app in Folder that imports its JavaScript
+	// workspace's own packages, so it builds from the repository's root with
+	// BuildCommand, BuildEnvVars and the start command narrowed to it.
+	WorkspaceBuild bool     `json:"workspace_build,omitempty"`
+	BuildCommand   string   `json:"build_command,omitempty"`
+	BuildEnvVars   string   `json:"build_env_vars,omitempty"`
+	WatchPaths     []string `json:"watch_paths,omitempty"`
+	// Apps are the folders holding an app of their own, when the repository
+	// holds more than its root does: the choices for the service's folder.
+	Apps []FoundApp `json:"apps,omitempty"`
+	// Workspace names the tool that ties its folders together, if one does.
+	Workspace string `json:"workspace,omitempty"`
+	// Unfetched are folders recorded as another repository, which a build
+	// finds empty.
+	Unfetched []string `json:"unfetched,omitempty"`
 }
 
 // repoView is a repository's files, by path, with their sizes, and a way to
@@ -56,6 +73,9 @@ type Detection struct {
 type repoView struct {
 	sizes map[string]int64
 	read  func(p string) string
+	// links are folders recorded as another repository's commit (gitlinks):
+	// submodules, or a project made inside the repository with its own .git.
+	links []string
 }
 
 func (r repoView) has(p string) bool { _, ok := r.sizes[p]; return ok }
@@ -236,10 +256,16 @@ func suggest(f StackFacts) Detection {
 }
 
 // DetectStack looks at a repository's branch and suggests how to build and
-// run it. integrationID is nil for a public repository, and must be orgID's.
+// run it: the app in folder, when one is given ("" or "." is the root), and
+// the apps the repository holds. integrationID is nil for a public
+// repository, and must be orgID's.
 // A branch or dockerfile path starting with "-" is refused, since both reach
 // git's command line.
-func (s *GitIntegrationService) DetectStack(ctx context.Context, orgID uuid.UUID, integrationID *uuid.UUID, repo, branch, dockerfilePath string) (*Detection, error) {
+func (s *GitIntegrationService) DetectStack(ctx context.Context, orgID uuid.UUID, integrationID *uuid.UUID, repo, branch, dockerfilePath, folder string) (*Detection, error) {
+	folder, err := BuildFolder(folder)
+	if err != nil {
+		return nil, err
+	}
 	var integration *db.GitIntegration
 	if integrationID != nil {
 		var row db.GitIntegration
@@ -262,8 +288,17 @@ func (s *GitIntegrationService) DetectStack(ctx context.Context, orgID uuid.UUID
 		return nil, err
 	}
 	defer cleanup()
-	d := suggest(detectStack(r, dockerfilePath))
-	d.Variables = detectVariables(r)
+	app := r
+	if folder != "." {
+		app = subView(r, folder)
+	}
+	d := suggest(detectStack(app, dockerfilePath))
+	if folder != "." {
+		d.Folder = folder
+		applyWorkspacePlan(&d, r, folder)
+	}
+	d.Variables = detectVariables(app)
+	detectLayout(&d, r, folder)
 	return &d, nil
 }
 
@@ -290,12 +325,17 @@ func shallowRepoView(ctx context.Context, creds gitCredentials, branch string) (
 	}
 	sizes := map[string]int64{}
 	blobs := map[string]string{}
+	var links []string
 	sc := bufio.NewScanner(bytes.NewReader(out))
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	for sc.Scan() {
 		// <mode> blob <sha> <size>\t<path>
 		meta, p, ok := strings.Cut(sc.Text(), "\t")
 		fields := strings.Fields(meta)
+		if ok && len(fields) == 4 && fields[1] == "commit" {
+			links = append(links, p)
+			continue
+		}
 		if !ok || len(fields) != 4 || fields[1] != "blob" {
 			continue
 		}
@@ -318,7 +358,7 @@ func shallowRepoView(ctx context.Context, creds gitCredentials, branch string) (
 		}
 		return string(b)
 	}
-	return repoView{sizes: sizes, read: read}, cleanup, nil
+	return repoView{sizes: sizes, read: read, links: links}, cleanup, nil
 }
 
 func lastLine(s string) string {

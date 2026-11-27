@@ -121,6 +121,14 @@ interface FormState {
   gitIntegrationId: string
   gitRepo: string
   gitBranch: string
+  /** The app's folder in the repository; "" is its root. */
+  rootDir: string
+  /** The folder was chosen by hand, so no look changes it. */
+  rootDirChosen: boolean
+  /** The app uses its workspace's packages: built from the root, narrowed to it. */
+  workspaceBuild: boolean
+  buildEnvVars: string
+  watchPaths: string[] | null
   builder: Builder
   dockerfilePath: string
   installCommand: string
@@ -154,6 +162,11 @@ const INITIAL: FormState = {
   gitIntegrationId: "",
   gitRepo: "",
   gitBranch: "",
+  rootDir: "",
+  rootDirChosen: false,
+  workspaceBuild: false,
+  buildEnvVars: "",
+  watchPaths: null,
   builder: "railpack",
   dockerfilePath: "Dockerfile",
   installCommand: "",
@@ -231,49 +244,7 @@ function NewResourcePage() {
         await servicesApi.uploadSource(orgId!, projectId, created.id, form.folder.archive, form.folder.name, true, token)
         return created
       }
-      const body: CreateServiceBody = {
-        name: form.name,
-        ports: form.ports.map((p) => ({
-          name: p.name,
-          port: p.port,
-          is_http: p.isHTTP,
-          is_primary: p.isPrimary,
-          is_public: p.isPublic,
-        })),
-        replicas: form.replicas,
-        cpu_request: form.cpuRequest || undefined,
-        cpu_limit: form.cpuLimit || undefined,
-        memory_request: form.memoryRequest || undefined,
-        memory_limit: form.memoryLimit || undefined,
-        node_id: form.nodeId ?? undefined,
-        start_command: form.startCommand.trim() || undefined,
-      }
-      if (form.source === "image") {
-        body.image = form.image
-        if (form.imageVisibility === "private" && form.pullRegistryIntegrationId) {
-          body.pull_registry_integration_id = form.pullRegistryIntegrationId
-        }
-      } else {
-        if (form.source === "upload") {
-          body.from_upload = true
-        } else {
-          if (form.gitVisibility === "private") {
-            body.git_integration_id = form.gitIntegrationId || undefined
-          }
-          body.git_repo = form.gitRepo
-          body.branch   = form.gitBranch
-        }
-        body.builder                  = form.builder
-        body.dockerfile_path          = form.builder === "dockerfile" ? form.dockerfilePath : undefined
-        body.install_command          = form.builder !== "dockerfile" ? form.installCommand.trim() || undefined : undefined
-        body.build_command            = form.builder !== "dockerfile" ? form.buildCommand.trim() || undefined : undefined
-        body.registry_integration_id  = form.registryIntegrationId || undefined
-        body.builder_node             = form.builderNodeName ?? ""
-        body.builder_cpu_request      = form.builderCPURequest || undefined
-        body.builder_memory_request   = form.builderMemoryRequest || undefined
-        body.builder_cpu_limit        = form.builderCPULimit || undefined
-        body.builder_memory_limit     = form.builderMemoryLimit || undefined
-      }
+      const body = serviceBody(form)
       const service = await servicesApi.create(orgId!, projectId, body, token)
       if (form.volumeAttachment) {
         await volumesApi.attach(orgId!, projectId, form.volumeAttachment.volumeId, { service_id: service.id, mount_path: form.volumeAttachment.mountPath }, token)
@@ -405,6 +376,180 @@ function NewResourcePage() {
 
 // ─── Service form ─────────────────────────────────────────────────────────────
 
+/** What creating the form's service sends: the same for one service and for
+ * each app of a repository, which differ only in the form they start from. */
+function serviceBody(form: FormState): CreateServiceBody {
+  const body: CreateServiceBody = {
+    name: form.name,
+    ports: form.ports.map((p) => ({
+      name: p.name,
+      port: p.port,
+      is_http: p.isHTTP,
+      is_primary: p.isPrimary,
+      is_public: p.isPublic,
+    })),
+    replicas: form.replicas,
+    cpu_request: form.cpuRequest || undefined,
+    cpu_limit: form.cpuLimit || undefined,
+    memory_request: form.memoryRequest || undefined,
+    memory_limit: form.memoryLimit || undefined,
+    node_id: form.nodeId ?? undefined,
+    start_command: form.startCommand.trim() || undefined,
+  }
+  if (form.source === "image") {
+    body.image = form.image
+    if (form.imageVisibility === "private" && form.pullRegistryIntegrationId) {
+      body.pull_registry_integration_id = form.pullRegistryIntegrationId
+    }
+  } else {
+    if (form.source === "upload") {
+      body.from_upload = true
+    } else {
+      if (form.gitVisibility === "private") {
+        body.git_integration_id = form.gitIntegrationId || undefined
+      }
+      body.git_repo = form.gitRepo
+      body.branch   = form.gitBranch
+      body.root_dir = form.rootDir || undefined
+      if (form.rootDir && form.workspaceBuild) {
+        body.workspace_build = true
+        body.watch_paths = form.watchPaths ?? undefined
+      }
+      body.build_env_vars = form.buildEnvVars.trim() || undefined
+    }
+    body.builder                  = form.builder
+    body.dockerfile_path          = form.builder === "dockerfile" ? form.dockerfilePath : undefined
+    body.install_command          = form.builder !== "dockerfile" ? form.installCommand.trim() || undefined : undefined
+    body.build_command            = form.builder !== "dockerfile" ? form.buildCommand.trim() || undefined : undefined
+    body.registry_integration_id  = form.registryIntegrationId || undefined
+    body.builder_node             = form.builderNodeName ?? ""
+    body.builder_cpu_request      = form.builderCPURequest || undefined
+    body.builder_memory_request   = form.builderMemoryRequest || undefined
+    body.builder_cpu_limit        = form.builderCPULimit || undefined
+    body.builder_memory_limit     = form.builderMemoryLimit || undefined
+  }
+  return body
+}
+
+/** A service name from a folder: its last part, as a service may be named. */
+function nameFor(folder: string) {
+  return (folder.split("/").pop() ?? folder).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "app"
+}
+
+/**
+ * A service for each app of a repository: each looked at in its own folder
+ * and made as the form would make it, with that app's suggestions, sharing
+ * everything else (the repository, the registry, the build node). One that
+ * fails is said and the rest are still made.
+ */
+function CreateEachDialog({ open, onOpenChange, form, apps, projectId, ready }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  form: FormState
+  apps: { folder: string; summary?: string }[]
+  projectId: string
+  ready: boolean
+}) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const draftSaved = useContext(ResourceDraftContext)
+  const [names, setNames] = useState<Record<string, string>>({})
+  const nameOf = (folder: string) => names[folder] ?? nameFor(folder)
+  const taken = new Set<string>()
+  const clash = apps.map((a) => nameOf(a.folder)).find((n) => (taken.has(n) ? true : (taken.add(n), false)))
+  const [failed, setFailed] = useState<string[]>([])
+
+  const make = useMutation({
+    mutationFn: async () => {
+      const errors: string[] = []
+      for (const app of apps) {
+        const name = nameOf(app.folder)
+        try {
+          const d = await qc.fetchQuery({
+            queryKey: ["detect-stack", orgId, form.gitIntegrationId, form.gitRepo.trim(), form.gitBranch.trim(), app.folder],
+            queryFn: () => gitApi.detect(orgId, {
+              git_integration_id: form.gitIntegrationId || undefined, repo: form.gitRepo.trim(), branch: form.gitBranch.trim(), root_dir: app.folder,
+            }, token),
+            staleTime: 5 * 60_000,
+          })
+          const port = d.port ?? INITIAL.ports[0].port
+          const primary = form.ports.findIndex((p) => p.isPrimary)
+          const body = serviceBody({
+            ...form,
+            name,
+            rootDir: app.folder,
+            builder: (d.builder ?? INITIAL.builder) as Builder,
+            startCommand: d.start_command ?? "",
+            buildCommand: d.build_command ?? "",
+            memoryLimit: d.memory_limit ?? form.memoryLimit,
+            workspaceBuild: !!d.workspace_build,
+            buildEnvVars: d.build_env_vars ?? "",
+            watchPaths: d.watch_paths ?? null,
+            ports: form.ports.map((p, i) => (i === primary ? { ...p, port } : p)),
+            volumeAttachment: null,
+          })
+          await servicesApi.create(orgId, projectId, body, token)
+        } catch (e) {
+          errors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+      return errors
+    },
+    onSuccess: (errors) => {
+      qc.invalidateQueries({ queryKey: ["services", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      if (errors.length > 0) {
+        setFailed(errors)
+        return
+      }
+      draftSaved()
+      navigate({ to: "/projects/$id/services", params: { id: projectId } })
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!make.isPending) { onOpenChange(o); setFailed([]) } }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>A service for each app</DialogTitle>
+          <DialogDescription>
+            Each is built from its own folder with what Meshploy found there, and deploys when a push changes it. The rest of
+            this form (the registry, the build node, the resources) is shared.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2" data-testid="create-each">
+          {apps.map((a) => (
+            <div key={a.folder} className="grid grid-cols-[minmax(0,1fr)_minmax(0,11rem)] items-center gap-3">
+              <div className="min-w-0">
+                <code className="block truncate font-mono text-xs">{a.folder}</code>
+                {a.summary && <span className="block truncate text-xs text-muted-foreground">{a.summary}</span>}
+              </div>
+              <input aria-label={`Name for ${a.folder}`} className={inputCls} value={nameOf(a.folder)} disabled={make.isPending}
+                onChange={(e) => setNames((n) => ({ ...n, [a.folder]: e.target.value }))} />
+            </div>
+          ))}
+        </div>
+        {clash && <p className="text-xs text-destructive">Two services would be called {clash}.</p>}
+        {!ready && <p className="text-xs text-muted-foreground">Choose the repository, branch and registry first.</p>}
+        {failed.length > 0 && (
+          <div role="alert" className="space-y-0.5 text-xs text-destructive">
+            <p>The others were made. These were not:</p>
+            {failed.map((f) => <p key={f}>{f}</p>)}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" disabled={make.isPending} onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button disabled={!ready || !!clash || make.isPending || apps.some((a) => !nameOf(a.folder).trim())} onClick={() => make.mutate()}>
+            {make.isPending && <Loader2 className="size-3.5 animate-spin" />}Create {apps.length} services
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ServiceForm({
   form,
   patch,
@@ -458,13 +603,17 @@ function ServiceForm({
   // earlier look filled in, so nothing typed by hand is overwritten, and
   // choosing another repository replaces the first one's suggestions.
   const detection = useStackDetection(orgId, form)
+  const [eachOpen, setEachOpen] = useState(false)
+  // Everything one service needs from the form except its own name.
+  const canCreateEach = form.gitRepo.length > 0 && form.gitBranch.length > 0 && form.registryIntegrationId.length > 0 &&
+    (form.gitVisibility === "public" || form.gitIntegrationId.length > 0)
   const [applied, setApplied] = useState<DetectionApplied>({})
   const d = form.source === "git" ? detection.data : undefined
   useEffect(() => {
     if (form.source !== "git") return
     const next: Partial<FormState> = {}
     const got: DetectionApplied = {}
-    const free = <K extends "builder" | "startCommand" | "memoryLimit">(k: K, prev: FormState[K] | undefined) =>
+    const free = <K extends "builder" | "startCommand" | "memoryLimit" | "buildCommand">(k: K, prev: FormState[K] | undefined) =>
       form[k] === INITIAL[k] || (prev !== undefined && form[k] === prev)
     const builder = d?.builder ?? INITIAL.builder
     if (free("builder", applied.builder as Builder | undefined)) {
@@ -475,6 +624,17 @@ function ServiceForm({
     if (free("startCommand", applied.startCommand)) {
       next.startCommand = start
       if (start) got.startCommand = start
+    }
+    // An app using its workspace's packages builds from the root, with a
+    // build command and variables narrowed to it; anything else does not.
+    next.workspaceBuild = !!d?.workspace_build
+    next.buildEnvVars = d?.build_env_vars ?? ""
+    next.watchPaths = d?.watch_paths ?? null
+    if (d?.workspace_build) got.workspace = true
+    const buildCmd = d?.build_command ?? INITIAL.buildCommand
+    if (free("buildCommand", applied.buildCommand)) {
+      next.buildCommand = buildCmd
+      if (buildCmd) got.buildCommand = buildCmd
     }
     const memory = d?.memory_limit ?? INITIAL.memoryLimit
     if (free("memoryLimit", applied.memoryLimit)) {
@@ -487,6 +647,14 @@ function ServiceForm({
     if (primary >= 0 && (current === INITIAL.ports[0].port || current === applied.port)) {
       if (current !== port) next.ports = form.ports.map((p, i) => (i === primary ? { ...p, port } : p))
       if (d?.port) got.port = port
+    }
+    // A repository with one app, kept in a folder, builds from that folder.
+    // Only while nobody chose one, and only from a look at the root.
+    if (d?.apps?.length === 1 && !d.folder && !form.rootDir && !form.rootDirChosen) {
+      next.rootDir = d.apps[0].folder
+      got.folder = d.apps[0].folder
+    } else if (applied.folder && form.rootDir === applied.folder) {
+      got.folder = applied.folder
     }
     const changed = (Object.keys(next) as (keyof FormState)[]).some((k) => JSON.stringify(next[k]) !== JSON.stringify(form[k]))
     if (changed) patch(next)
@@ -520,12 +688,22 @@ function ServiceForm({
         <SourceFields
           value={form as SourceState}
           // A folder picked before the service is named names it.
-          onChange={(p) => patch(p.folder && !form.name.trim()
-            ? { ...p, name: p.folder.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") }
-            : p)}
+          onChange={(p) => {
+            // Another repository or branch starts again from its root.
+            const moved = "gitRepo" in p || "gitBranch" in p || "gitIntegrationId" in p ? { rootDir: "", rootDirChosen: false } : {}
+            patch(p.folder && !form.name.trim()
+              ? { ...p, ...moved, name: p.folder.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") }
+              : { ...p, ...moved })
+          }}
           pickDefaultRegistry
         />
-        {form.source === "git" && <StackDetection query={detection} applied={applied} />}
+        {form.source === "git" && (
+          <StackDetection query={detection} applied={applied} folder={form.rootDir} onFolder={(rootDir) => patch({ rootDir, rootDirChosen: true })}
+            onCreateEach={() => setEachOpen(true)} />
+        )}
+        {form.source === "git" && d?.apps && d.apps.length > 1 && (
+          <CreateEachDialog open={eachOpen} onOpenChange={setEachOpen} form={form} apps={d.apps} projectId={projectId} ready={canCreateEach} />
+        )}
       </Section>
 
       {/* ── Section: Build ───────────────────────────────────── */}

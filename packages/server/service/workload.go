@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"path"
 	"strings"
 	"sync/atomic"
 
@@ -82,13 +83,19 @@ type CreateWorkloadInput struct {
 	GitRepo          string
 	// FromUpload makes the build config without a repository, for a folder
 	// uploaded afterwards (DeploymentService.UploadSource).
-	FromUpload            bool
-	Branch                string
-	Builder               db.BuilderType
-	DockerfilePath        string
-	InstallCommand        string // "" = the builder's own
-	BuildCommand          string // "" = the builder's own
-	StartCommand          string // "" = the image's own
+	FromUpload     bool
+	Branch         string
+	Builder        db.BuilderType
+	DockerfilePath string
+	RootDir        string // the app's folder in the repository; "" is its root
+	// WorkspaceBuild builds RootDir's app from the repository's root, as an
+	// app using its JavaScript workspace's packages needs.
+	WorkspaceBuild        bool
+	BuildEnvVars          string   // KEY=VALUE lines; "" = none
+	WatchPaths            []string // nil = the app's folder, or every push for the root
+	InstallCommand        string   // "" = the builder's own
+	BuildCommand          string   // "" = the builder's own
+	StartCommand          string   // "" = the image's own
 	RegistryIntegrationID *uuid.UUID
 	BuilderNode           string // "" = auto-schedule on any builder node
 	BuilderCPURequest     string // "" = default (250m)
@@ -346,6 +353,24 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		if dockerfilePath == "" {
 			dockerfilePath = "Dockerfile"
 		}
+		rootDir, err := BuildFolder(in.RootDir)
+		if err != nil {
+			return err
+		}
+		// An app in a folder of the repository deploys on a push that changed
+		// that folder, not on every push to its neighbours.
+		var watch db.StringArray
+		if rootDir != "." {
+			watch = db.StringArray{rootDir}
+		}
+		if in.WatchPaths != nil {
+			watch = db.StringArray{}
+			for _, p := range in.WatchPaths {
+				if p = strings.Trim(strings.TrimSpace(p), "/"); p != "" {
+					watch = append(watch, p)
+				}
+			}
+		}
 		deployToken, err := generateDeployToken()
 		if err != nil {
 			return err
@@ -356,6 +381,10 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			Builder:               builder,
 			GitRepo:               in.GitRepo,
 			Branch:                branch,
+			RootDir:               rootDir,
+			WorkspaceBuild:        in.WorkspaceBuild && rootDir != ".",
+			BuildEnvVars:          db.EncryptedString(in.BuildEnvVars),
+			WatchPaths:            watch,
 			DockerfilePath:        dockerfilePath,
 			InstallCommand:        strings.TrimSpace(in.InstallCommand),
 			BuildCommand:          strings.TrimSpace(in.BuildCommand),
@@ -1122,11 +1151,36 @@ func (s *WorkloadService) GetBuildEnvVars(ctx context.Context, serviceID uuid.UU
 	return string(bc.BuildEnvVars), nil
 }
 
+// ErrBuildFolder is a build folder that is not a folder of the repository.
+var ErrBuildFolder = errors.New(`the build folder must be a folder of the repository, such as "apps/web", or "." for its root`)
+
+// BuildFolder is a service's build folder as it is kept: relative to the
+// repository's root, without leading or trailing slashes, "." for the root.
+// A folder outside the repository ("..") or that git would read as an
+// option ("-") is refused.
+func BuildFolder(s string) (string, error) {
+	s = strings.Trim(strings.TrimSpace(s), "/")
+	if s == "" || s == "." {
+		return ".", nil
+	}
+	s = path.Clean(s)
+	if strings.HasPrefix(s, "-") || strings.ContainsAny(s, "\\\x00\n") {
+		return "", ErrBuildFolder
+	}
+	for _, part := range strings.Split(s, "/") {
+		if part == ".." {
+			return "", ErrBuildFolder
+		}
+	}
+	return s, nil
+}
+
 type UpdateBuildConfigInput struct {
 	GitIntegrationID      *uuid.UUID
 	GitRepo               *string
 	Branch                *string
 	RootDir               *string // subdirectory within the repo to build from (e.g. "frontend")
+	WorkspaceBuild        *bool   // build RootDir's app from the repository's root
 	Builder               *db.BuilderType
 	DockerfilePath        *string
 	InstallCommand        *string // nil = no change; "" = the builder's own
@@ -1183,7 +1237,17 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 		bc.Branch = *in.Branch
 	}
 	if in.RootDir != nil {
-		bc.RootDir = *in.RootDir
+		dir, err := BuildFolder(*in.RootDir)
+		if err != nil {
+			return nil, err
+		}
+		bc.RootDir = dir
+	}
+	if in.WorkspaceBuild != nil {
+		bc.WorkspaceBuild = *in.WorkspaceBuild
+	}
+	if bc.RootDir == "." || bc.RootDir == "" {
+		bc.WorkspaceBuild = false // the root is built from the root anyway
 	}
 	if in.Builder != nil {
 		bc.Builder = db.Builder(*in.Builder)

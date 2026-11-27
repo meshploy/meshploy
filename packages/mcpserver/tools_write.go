@@ -66,6 +66,10 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 			mcp.WithString("storage_gb", mcp.Description("Database storage in GiB (default: 10)")),
 			mcp.WithString("git_repo", mcp.Description("Git repository URL for build-from-source")),
 			mcp.WithString("branch", mcp.Description("Git branch (default: main)")),
+			mcp.WithString("root_dir", mcp.Description("The app's folder in the repository when it is not at the root, as apps/web: a monorepo's app. Pushes then deploy it only when they touch that folder")),
+			mcp.WithBoolean("workspace_build", mcp.Description("With root_dir: build that app from the repository's root, for an app importing its JavaScript workspace's own packages. Give a build_command and start command narrowed to the app, as pnpm --filter web... run build")),
+			mcp.WithString("build_command", mcp.Description("Replaces Railpack's build step")),
+			mcp.WithString("build_env_vars", mcp.Description("Build-time variables, KEY=VALUE lines")),
 			mcp.WithString("builder", mcp.Description("Builder: railpack (default), dockerfile, or image")),
 			mcp.WithString("env_vars", mcp.Description("Runtime env vars as KEY=VALUE lines")),
 			mcp.WithString("replicas", mcp.Description("Number of replicas (default: 1)")),
@@ -158,6 +162,8 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 			mcp.WithString("branch", mcp.Description("Git branch")),
 			mcp.WithString("builder", mcp.Description("Builder: railpack (default), dockerfile, or image")),
 			mcp.WithString("dockerfile_path", mcp.Description("Path to Dockerfile (default: Dockerfile)")),
+			mcp.WithString("root_dir", mcp.Description("The app's folder in the repository, as apps/web; \".\" for the root")),
+			mcp.WithBoolean("workspace_build", mcp.Description("With root_dir: build that app from the repository's root, for an app importing its JavaScript workspace's own packages. Give a build_command and start command narrowed to the app, as pnpm --filter web... run build")),
 			mcp.WithBoolean("auto_deploy", mcp.Description("Auto-deploy on git push")),
 		),
 		s.handleUpdateBuildConfig,
@@ -1133,19 +1139,23 @@ func (s *srv) handleCreateService(_ context.Context, req mcp.CallToolRequest) (*
 	}
 
 	body := client.CreateServiceBody{
-		Name:          name,
-		Image:         mcp.ParseString(req, "image", ""),
-		Type:          mcp.ParseString(req, "type", ""),
-		Engine:        mcp.ParseString(req, "engine", ""),
-		Version:       mcp.ParseString(req, "version", ""),
-		GitRepo:       mcp.ParseString(req, "git_repo", ""),
-		Branch:        mcp.ParseString(req, "branch", ""),
-		Builder:       mcp.ParseString(req, "builder", ""),
-		EnvVars:       mcp.ParseString(req, "env_vars", ""),
-		CPURequest:    mcp.ParseString(req, "cpu_request", ""),
-		CPULimit:      mcp.ParseString(req, "cpu_limit", ""),
-		MemoryRequest: mcp.ParseString(req, "memory_request", ""),
-		MemoryLimit:   mcp.ParseString(req, "memory_limit", ""),
+		Name:           name,
+		Image:          mcp.ParseString(req, "image", ""),
+		Type:           mcp.ParseString(req, "type", ""),
+		Engine:         mcp.ParseString(req, "engine", ""),
+		Version:        mcp.ParseString(req, "version", ""),
+		GitRepo:        mcp.ParseString(req, "git_repo", ""),
+		Branch:         mcp.ParseString(req, "branch", ""),
+		RootDir:        mcp.ParseString(req, "root_dir", ""),
+		WorkspaceBuild: mcp.ParseBoolean(req, "workspace_build", false),
+		BuildCommand:   mcp.ParseString(req, "build_command", ""),
+		BuildEnvVars:   mcp.ParseString(req, "build_env_vars", ""),
+		Builder:        mcp.ParseString(req, "builder", ""),
+		EnvVars:        mcp.ParseString(req, "env_vars", ""),
+		CPURequest:     mcp.ParseString(req, "cpu_request", ""),
+		CPULimit:       mcp.ParseString(req, "cpu_limit", ""),
+		MemoryRequest:  mcp.ParseString(req, "memory_request", ""),
+		MemoryLimit:    mcp.ParseString(req, "memory_limit", ""),
 	}
 	replicasStr := mcp.ParseString(req, "replicas", "")
 	if replicasStr != "" {
@@ -1226,10 +1236,19 @@ func (s *srv) handleUpdateBuildConfig(_ context.Context, req mcp.CallToolRequest
 	if v := mcp.ParseString(req, "dockerfile_path", ""); v != "" {
 		body.DockerfilePath = &v
 	}
-	// auto_deploy is a bool; only set if explicitly provided (mcp-go returns false as default)
-	// We check by parsing the raw argument
-	autoDeploy := mcp.ParseBoolean(req, "auto_deploy", false)
-	body.AutoDeploy = &autoDeploy
+	if v := mcp.ParseString(req, "root_dir", ""); v != "" {
+		body.RootDir = &v
+	}
+	if _, sent := req.GetArguments()["workspace_build"]; sent {
+		v := mcp.ParseBoolean(req, "workspace_build", false)
+		body.WorkspaceBuild = &v
+	}
+	// auto_deploy changes only when it is sent: a call that leaves it out
+	// (changing the branch, say) must not turn deploy-on-push off.
+	if _, sent := req.GetArguments()["auto_deploy"]; sent {
+		autoDeploy := mcp.ParseBoolean(req, "auto_deploy", false)
+		body.AutoDeploy = &autoDeploy
+	}
 
 	bc, err := s.c.UpdateBuildConfig(s.orgID, projectID, svc.ID, body)
 	if err != nil {
@@ -1240,6 +1259,7 @@ func (s *srv) handleUpdateBuildConfig(_ context.Context, req mcp.CallToolRequest
 		GitRepo:        bc.GitRepo,
 		Branch:         bc.Branch,
 		DockerfilePath: bc.DockerfilePath,
+		RootDir:        bc.RootDir,
 		AutoDeploy:     bc.AutoDeploy,
 	})
 }

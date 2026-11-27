@@ -74,14 +74,18 @@ type CreateWorkloadInput struct {
 		GitRepo          string  `json:"git_repo,omitempty"`
 		// FromUpload makes the build config with no repository: the source
 		// is a folder sent next to .../source.
-		FromUpload            bool    `json:"from_upload,omitempty" doc:"Built from a folder uploaded to .../source, not a repository"`
-		Branch                string  `json:"branch,omitempty"`
-		Builder               string  `json:"builder,omitempty"`
-		DockerfilePath        string  `json:"dockerfile_path,omitempty"`
-		InstallCommand        string  `json:"install_command,omitempty" doc:"Replaces the builder's install step (Railpack). Empty: Railpack's own"`
-		BuildCommand          string  `json:"build_command,omitempty" doc:"Replaces the builder's build step (Railpack). Empty: Railpack's own"`
-		StartCommand          string  `json:"start_command,omitempty" doc:"Run through the image's /bin/sh at start. Empty: the image's own"`
-		RegistryIntegrationID *string `json:"registry_integration_id,omitempty"`
+		FromUpload            bool     `json:"from_upload,omitempty" doc:"Built from a folder uploaded to .../source, not a repository"`
+		Branch                string   `json:"branch,omitempty"`
+		Builder               string   `json:"builder,omitempty"`
+		DockerfilePath        string   `json:"dockerfile_path,omitempty"`
+		RootDir               string   `json:"root_dir,omitempty" doc:"The app's folder in the repository, as apps/web. Empty: its root. A folder also becomes the paths a push must touch to deploy"`
+		WorkspaceBuild        bool     `json:"workspace_build,omitempty" doc:"Build root_dir's app from the repository's root, for an app using its JavaScript workspace's packages; its build and start commands name the app"`
+		BuildEnvVars          string   `json:"build_env_vars,omitempty" doc:"Build-time variables, KEY=VALUE lines"`
+		WatchPaths            []string `json:"watch_paths,omitempty" doc:"Deploy on push only when one of these paths changed. Default: root_dir when set, else every push"`
+		InstallCommand        string   `json:"install_command,omitempty" doc:"Replaces the builder's install step (Railpack). Empty: Railpack's own"`
+		BuildCommand          string   `json:"build_command,omitempty" doc:"Replaces the builder's build step (Railpack). Empty: Railpack's own"`
+		StartCommand          string   `json:"start_command,omitempty" doc:"Run through the image's /bin/sh at start. Empty: the image's own"`
+		RegistryIntegrationID *string  `json:"registry_integration_id,omitempty"`
 		// BuilderNode is the k8s_node_name to pin builds to ("" = auto-schedule).
 		BuilderNode          string `json:"builder_node,omitempty"`
 		BuilderCPURequest    string `json:"builder_cpu_request,omitempty"`
@@ -392,6 +396,9 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		}
 		pullRegistryID = &id
 	}
+	if _, err := svc.BuildFolder(input.Body.RootDir); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 
 	ports := make([]svc.PortInput, len(input.Body.Ports))
 	for i, p := range input.Body.Ports {
@@ -422,6 +429,10 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		Branch:                    input.Body.Branch,
 		Builder:                   db.BuilderType(input.Body.Builder),
 		DockerfilePath:            input.Body.DockerfilePath,
+		RootDir:                   input.Body.RootDir,
+		WorkspaceBuild:            input.Body.WorkspaceBuild,
+		BuildEnvVars:              input.Body.BuildEnvVars,
+		WatchPaths:                input.Body.WatchPaths,
 		InstallCommand:            input.Body.InstallCommand,
 		BuildCommand:              input.Body.BuildCommand,
 		StartCommand:              input.Body.StartCommand,
@@ -633,6 +644,8 @@ type PatchBuildConfigInput struct {
 		Branch                *string   `json:"branch,omitempty"`
 		Builder               *string   `json:"builder,omitempty"`
 		DockerfilePath        *string   `json:"dockerfile_path,omitempty"`
+		RootDir               *string   `json:"root_dir,omitempty" doc:"The app's folder in the repository, as apps/web. Omit: no change; empty or \".\": its root"`
+		WorkspaceBuild        *bool     `json:"workspace_build,omitempty" doc:"Build root_dir's app from the repository's root, for an app using its JavaScript workspace's packages"`
 		InstallCommand        *string   `json:"install_command,omitempty" doc:"Railpack only. Omit: no change; empty: the builder's own"`
 		BuildCommand          *string   `json:"build_command,omitempty" doc:"Railpack only. Omit: no change; empty: the builder's own"`
 		RegistryIntegrationID *string   `json:"registry_integration_id,omitempty"` // "" = clear
@@ -664,6 +677,8 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		GitRepo:              input.Body.GitRepo,
 		Branch:               input.Body.Branch,
 		DockerfilePath:       input.Body.DockerfilePath,
+		RootDir:              input.Body.RootDir,
+		WorkspaceBuild:       input.Body.WorkspaceBuild,
 		InstallCommand:       input.Body.InstallCommand,
 		BuildCommand:         input.Body.BuildCommand,
 		BuilderNode:          input.Body.BuilderNode,
@@ -702,6 +717,11 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		}
 	}
 
+	if in.RootDir != nil {
+		if _, err := svc.BuildFolder(*in.RootDir); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+	}
 	bc, err := h.svc.Workloads.UpsertBuildConfig(ctx, serviceID, in)
 	if err != nil {
 		if errors.Is(err, svc.ErrInvalidResources) {
