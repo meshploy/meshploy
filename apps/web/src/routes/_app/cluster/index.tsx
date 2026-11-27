@@ -258,10 +258,10 @@ function ClusterPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        {/* Mesh topology visualization */}
+        {/* Network: the gateway and the machines around it */}
         <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
           <div className="px-4 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">Mesh topology</p>
+            <p className="text-sm font-semibold text-foreground">Network</p>
             <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4.5">WireGuard</Badge>
           </div>
           <div className="p-4">

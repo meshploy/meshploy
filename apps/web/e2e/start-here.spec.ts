@@ -49,7 +49,7 @@ test.describe("Overview", () => {
   test("leads with recent activity, not the mesh diagram", async ({ page }) => {
     await goto(page, "/")
     await expect(page.getByText("Recent activity")).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText("Mesh topology")).toHaveCount(0)
+    await expect(page.getByText("Network", { exact: true })).toHaveCount(0)
     // A row links back to the record it is reporting.
     await expect(page.getByText("in Demo Project").first()).toBeVisible()
   })
