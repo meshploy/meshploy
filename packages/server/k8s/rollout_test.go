@@ -223,3 +223,25 @@ func TestAnAvailablePodThatCrashesFailsTheRollout(t *testing.T) {
 		t.Errorf("reason = %q", r.Reason)
 	}
 }
+
+// A container that exits with 0 ran to its end, which a crash loop's own words
+// do not say; the failure explains it.
+func TestAContainerThatFinishesIsExplained(t *testing.T) {
+	pod := func(code int32) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-1", Namespace: "proj", Labels: map[string]string{"app": "api", "managed-by": "meshploy"}},
+			Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+				State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff", Message: "back-off 10s"}},
+				LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: code}},
+			}}},
+		}
+	}
+	_, detail, fatal := terminalPodFailure(context.Background(), fake.NewSimpleClientset(pod(0)), "api", "proj", []string{"api-1"})
+	if !fatal || !strings.Contains(detail, "exit code 0") || !strings.Contains(detail, "finished instead of staying up") {
+		t.Errorf("exit 0: %q", detail)
+	}
+	_, detail, _ = terminalPodFailure(context.Background(), fake.NewSimpleClientset(pod(1)), "api", "proj", []string{"api-1"})
+	if strings.Contains(detail, "staying up") {
+		t.Errorf("exit 1 is a crash and says so plainly: %q", detail)
+	}
+}

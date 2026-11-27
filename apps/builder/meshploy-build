@@ -447,6 +447,21 @@ case "${BUILDER}" in
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
         "${RAILPACK_CMD_FLAGS[@]+"${RAILPACK_CMD_FLAGS[@]}"}"
 
+    # A plan with no start command makes an image that exits the moment it
+    # starts, which the rollout then reports as a crash loop with exit code 0.
+    # Said here instead, before the build, unless the service starts it with
+    # a command of its own (SERVICE_START_COMMAND=set). An API too old to say
+    # either way sends nothing, and nothing is checked.
+    if [[ "${SERVICE_START_COMMAND:-}" == "none" ]] \
+        && ! grep -qE '"startCommand"[[:space:]]*:[[:space:]]*"[^"]' "${BUILD_DIR}/railpack-plan.json"; then
+        die "Nothing says how this app starts, so it would stop as soon as it started.
+  Give it one of these:
+  - a \"start\" script in package.json (or the start file your language uses)
+  - a start command on the service's Config page
+  - for a static site, the build variable RAILPACK_SPA_OUTPUT_DIR naming the folder the build writes
+  If the app is in a folder of the repository rather than at its root, build from that folder."
+    fi
+
     log "Building and pushing via BuildKit frontend → ${IMAGE_DEST}"
     buildctl build \
         --frontend=gateway.v0 \

@@ -89,6 +89,11 @@ type BuildJobParams struct {
 	// DockerfilePath is a Dockerfile build's file, relative to RootDir. Empty
 	// is the builder's default, Dockerfile.
 	DockerfilePath string
+	// ServiceStarts is a service that says how it starts (its own start
+	// command or command), so an image without one still runs. Without it, a
+	// Railpack plan with no start command fails the build instead of making
+	// an image that exits as soon as it starts.
+	ServiceStarts bool
 	// InstallCommand and BuildCommand override the builder's own, for
 	// Railpack; empty leaves it to the builder.
 	InstallCommand string
@@ -109,6 +114,15 @@ type BuildJobParams struct {
 	// request when that is larger; empty CPU = no cap.
 	CPULimit    string
 	MemoryLimit string
+}
+
+// startsWord is SERVICE_START_COMMAND: set or none. A builder that gets
+// neither (from an older API) checks nothing.
+func startsWord(starts bool) string {
+	if starts {
+		return "set"
+	}
+	return "none"
 }
 
 // UploadedSource is a folder uploaded as a tar.gz and kept in the registry:
@@ -404,6 +418,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "BUILD_ENV_VARS", Value: p.BuildEnvVars},
 								{Name: "INSTALL_COMMAND", Value: p.InstallCommand},
 								{Name: "BUILD_COMMAND", Value: p.BuildCommand},
+								{Name: "SERVICE_START_COMMAND", Value: startsWord(p.ServiceStarts)},
 								{Name: "CACHE_LIMIT_MB", Value: strconv.Itoa(p.CacheLimitMB)},
 								{Name: "BUILD_SCRATCH", Value: buildScratchMountAt},
 							}, sourceEnv(p.Source)...),

@@ -468,6 +468,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		CacheLimitMB:   s.cfg.BuildCacheLimitGB * 1024,
 		InstallCommand: a.bc.InstallCommand,
 		BuildCommand:   a.bc.BuildCommand,
+		ServiceStarts:  strings.TrimSpace(a.svc.StartCommand) != "" || len(a.svc.Command) > 0,
 		BuilderNode:    a.bc.BuilderNode,
 		CPURequest:     a.bc.BuilderCPURequest,
 		MemoryRequest:  a.bc.BuilderMemoryRequest,

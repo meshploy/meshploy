@@ -261,6 +261,12 @@ func terminalPodFailure(
 				if extra == "" {
 					extra = fmt.Sprintf("exit code %d", t.ExitCode)
 				}
+				// Exiting with 0 is no crash: the app ran to its end. A server
+				// that stays up never does, so what it was started with is not
+				// one, or nothing started it at all.
+				if t.ExitCode == 0 {
+					extra += ". The app ran and finished instead of staying up: check that its start command runs a server, or set one on the service's Config page"
+				}
 				msg = strings.TrimSpace(msg + " " + extra)
 			}
 			if msg != "" {
